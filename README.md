@@ -26,6 +26,7 @@ AI-driven D&D engine where LLM agents run tabletop RPG sessions autonomously.
 - `infinite-dnd` - runs the game
 - `infinite-dnd --new-character` - runs the game with an interactively-created PC
 - `infinite-dnd --interactive` - play the PC's turns yourself from the console; everything else stays autonomous
+- `infinite-dnd --scenario smuggler-cove --resume` - continue the latest saved run for that scenario
 - `infinite-dnd --web` - play the PC from the World dashboard (start `infinite-dnd-state` first)
 - `infinite-dnd --record-replay run.jsonl` - records structured agent decisions for deterministic playback
 - `infinite-dnd --replay run.jsonl` - replays a recorded run without an LLM provider
@@ -33,6 +34,8 @@ AI-driven D&D engine where LLM agents run tabletop RPG sessions autonomously.
 - `infinite-dnd-scorecard` - compares campaign runs
 - `infinite-dnd-recap` - exports a run's saved state as a markdown story recap
 - `infinite-dnd-dump-context` - dumps each agent's exact prompt/tools/context for inspection
+
+Run these commands from the same working directory: saved campaigns live under `world-state/` and session logs under `logs/` there. The dashboard reads those directories by default. Use `uv run` before each command when using the project environment.
 
 ### 🌐 Deploy
 Runs on a home server via `docker-compose.yml` + `Caddyfile`, behind a `.env` with

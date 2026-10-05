@@ -47,7 +47,7 @@ class StateManager:
         *,
         resume: bool = False,
     ):
-        self.ROOT_DIR = Path(__file__).resolve().parents[3]
+        self.ROOT_DIR = Path.cwd()
         self.scenario = scenario or pick_scenario()
         self.manifest = read_manifest(self.scenario)
         self.setup_dir = scenario_dir(self.scenario)

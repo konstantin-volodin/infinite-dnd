@@ -79,7 +79,7 @@ def get_health_status(character: object) -> str:
     return "healthy"
 
 
-def attack_damage(attacker: Character, rng: random.Random | None = None) -> int:
+def attack_damage(attacker: Character, rng: DieRoller | None = None) -> int:
     """Roll attack damage: d4 plus a flat bonus per level above 1."""
     roll = (rng or random).randint(1, 4)
     return roll + attacker.stats.level - 1

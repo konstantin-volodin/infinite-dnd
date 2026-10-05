@@ -1398,6 +1398,7 @@ def run_game(
     scenario: str | None = None,
     new_character: dict | None = None,
     *,
+    resume: bool = False,
     replay: ReplayTape | None = None,
     pc_controller: Callable[[str, WorldState], Awaitable[CharacterTool]] | None = None,
 ) -> bool:
@@ -1410,6 +1411,7 @@ def run_game(
             character_id,
             max_turns,
             new_character,
+            resume=resume,
             replay=replay,
             pc_controller=pc_controller,
         )

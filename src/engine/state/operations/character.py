@@ -2,9 +2,7 @@
 Character-scoped operations: movement, dialogue, items, stats, relationships, knowledge, combat.
 """
 
-import random
-
-from src.engine.rules import attack_damage, kill_xp
+from src.engine.rules import DieRoller, attack_damage, kill_xp
 from src.engine.state.operations._base import _OpsBase
 from src.engine.state.queries import resolve_character, slugify
 
@@ -173,7 +171,7 @@ class CharacterOps(_OpsBase):
 
     # ============ COMBAT ============
     def attack(
-        self, attacker_id: str, target_id: str, rng: random.Random | None = None
+        self, attacker_id: str, target_id: str, rng: DieRoller | None = None
     ) -> str:
         attacker = self.state.characters.get(attacker_id)
         if not attacker:

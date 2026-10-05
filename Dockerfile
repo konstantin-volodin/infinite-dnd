@@ -6,6 +6,7 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 COPY src ./src
+COPY config ./config
 
 RUN uv pip install --system --no-cache .
 

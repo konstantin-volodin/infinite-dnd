@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.scripts]
-infinite-dnd = "run_game:main"
+infinite-dnd = "src.cli:main"
 infinite-dnd-state = "src.interface.app:main"
 infinite-dnd-scorecard = "src.interface.scorecard:main"
 infinite-dnd-recap = "src.interface.recap:main"
@@ -33,6 +33,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"config/llama.yaml" = "config/llama.yaml"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 target-version = "py313"

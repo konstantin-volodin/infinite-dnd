@@ -84,6 +84,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="World dashboard URL used with --web.",
     )
     replay_group = parser.add_mutually_exclusive_group()
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume the latest saved run for --scenario.",
+    )
     replay_group.add_argument(
         "--record-replay",
         metavar="PATH",
@@ -97,6 +102,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.interactive and args.web:
         parser.error("--interactive and --web cannot be used together")
+    if args.resume and (not args.scenario or args.new_character or args.replay):
+        parser.error(
+            "--resume requires --scenario and cannot be combined with --new-character or --replay"
+        )
     return args
 
 
@@ -133,6 +142,7 @@ def main() -> None:
             max_turns=args.turns,
             scenario=scenario,
             new_character=new_character,
+            resume=args.resume,
             replay=tape,
             pc_controller=(
                 console_pc_controller

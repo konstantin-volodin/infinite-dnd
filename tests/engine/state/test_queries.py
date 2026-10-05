@@ -53,8 +53,9 @@ def test_resolve_character_ignores_article_and_title_order(state):
         location="tavern",
     )
 
-    assert resolve_character(state, "alan-dockmaster").id == "alan-the-dockmaster"
-    assert resolve_character(state, "dockmaster-alan").id == "alan-the-dockmaster"
+    for name in ("alan-dockmaster", "dockmaster-alan"):
+        character = resolve_character(state, name)
+        assert character is not None and character.id == "alan-the-dockmaster"
 
 
 def test_resolve_character_rejects_ambiguous_identity_alias(state):
@@ -80,7 +81,8 @@ def test_resolve_character_rejects_ambiguous_partial_match(state):
     )
 
     assert resolve_character(state, "bram") is None
-    assert resolve_character(state, "bram the bold").id == "bram-the-bold"
+    character = resolve_character(state, "bram the bold")
+    assert character is not None and character.id == "bram-the-bold"
 
 
 def test_resolve_location_id(state):

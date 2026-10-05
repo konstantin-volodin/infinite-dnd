@@ -12,7 +12,7 @@ jobs:
           enable-cache: true
 
       - run: uv sync --locked --extra dev
-      - run: uv run ruff check . --fix
-      - run: uv run ruff format .
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
       - run: uv run pyright
       - run: uv run pytest

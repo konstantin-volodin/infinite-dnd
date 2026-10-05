@@ -4,6 +4,9 @@ from inspect import signature
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai import RunContext
+from pydantic_ai.usage import RunUsage
+from src.agents.utils import create_model
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
@@ -34,6 +37,10 @@ from src.agents.action_resolver.agent import (
 )
 from src.agents.character.tools import Attack, Check, Speak, Travel, Wait
 from src.agents.dm.tools import Create, Modify
+
+
+def _context(deps: ActionResolverDeps) -> RunContext[ActionResolverDeps]:
+    return RunContext(deps=deps, model=create_model(), usage=RunUsage())
 
 
 def _state() -> WorldState:
@@ -622,7 +629,7 @@ def test_free_form_action_reports_actual_mutations_instead_of_contradictory_pros
     state = _state()
 
     async def resolved_action(*_args, **kwargs):
-        ctx = SimpleNamespace(deps=kwargs["deps"])
+        ctx = _context(kwargs["deps"])
         discover_exit(
             ctx,
             name="wine cellar",
@@ -862,8 +869,8 @@ def test_free_form_action_uses_character_memory_when_resolver_records_none(monke
 
 def test_action_resolver_keeps_only_one_decisive_knowledge_fact_per_action():
     state = _state()
-    ctx = SimpleNamespace(
-        deps=ActionResolverDeps(
+    ctx = _context(
+        ActionResolverDeps(
             char=state.characters["hero"],
             state=state,
             description="read the genealogy",
@@ -887,7 +894,7 @@ def test_action_resolver_does_not_count_blank_knowledge_as_an_effect():
         state=state,
         description="inspect the empty desk",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
     history_before = list(state.history)
 
     result = remember(ctx, "  \t\n  ")
@@ -909,7 +916,7 @@ def test_action_resolver_rejects_transient_self_action_memory_then_accepts_disco
             "while keeping them in conversation."
         ),
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     transient = remember(
         ctx,
@@ -940,7 +947,7 @@ def test_action_resolver_rejects_subject_elided_completed_action_memory():
         state=state,
         description="confront the merchant with the seized ledger",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -968,7 +975,7 @@ def test_action_resolver_rejects_known_character_follow_up_plan():
         state=state,
         description="review the seized records and decide who should receive them",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -999,7 +1006,7 @@ def test_action_resolver_rejects_known_character_pending_action():
         state=state,
         description="listen while Elara explains whom she plans to question next",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -1022,7 +1029,7 @@ def test_action_resolver_rejects_subject_elided_follow_up_plan():
         state=state,
         description="review which servants may know where the circlet went",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -1049,7 +1056,7 @@ def test_action_resolver_rejects_deictic_worth_follow_up_plan():
         state=state,
         description="follow Finnian's lead about Calla and the vault",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -1075,7 +1082,7 @@ def test_action_resolver_rejects_deictic_next_lead_follow_up_plan():
         state=state,
         description="review Kaelen's planned meeting with Dockmaster Alan",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -1114,7 +1121,7 @@ def test_action_resolver_rejects_possessive_priority_plan(knowledge):
         state=state,
         description="review the merchant mark's connection to the black-hulled sloop",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(ctx, knowledge)
 
@@ -1134,7 +1141,7 @@ def test_action_resolver_rejects_embedded_check_back_instruction():
         state=state,
         description="review Ronny's lead after searching the guild ledger",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
     knowledge = (
         "Ronny Spice is asking the docks crew about Kaelen—check back with her "
         "after visiting the guild-hall ledger."
@@ -1158,7 +1165,7 @@ def test_action_resolver_rejects_possessive_current_objective_note():
         state=state,
         description="search the upper-library for clues about the Oak Circlet",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -1198,7 +1205,7 @@ def test_action_resolver_keeps_self_attributed_discovery_memory():
         state=state,
         description="search the merchant's desk for evidence",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx, "Hero found the smuggler's manifest beneath the merchant's desk."
@@ -1239,7 +1246,7 @@ def test_action_resolver_allows_corrected_memory_after_failed_attempt(
         state=state,
         description="question the chapel sexton",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     first = remember(ctx, first_fact, character_id=character_id)
     corrected = remember(
@@ -1274,7 +1281,7 @@ def test_action_resolver_rejects_whereabouts_that_conflict_with_canonical_state(
         state=state,
         description="ask where Old Keph is right now",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -1304,7 +1311,7 @@ def test_action_resolver_accepts_whereabouts_after_canonical_location_update():
         state=state,
         description="find Old Keph in the village square",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     move_result = create_npc(ctx, "Old Keph", location="village-square")
     remember_result = remember(ctx, "Old Keph is at village-square.")
@@ -1424,7 +1431,7 @@ def test_action_resolver_allows_known_npc_to_report_about_another_location():
         state=state,
         description="ask Old Keph what he knows",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(ctx, "Old Keph says the smugglers meet at village-square.")
 
@@ -1441,7 +1448,7 @@ def test_action_resolver_does_not_record_zero_effect_hp_adjustment():
         state=state,
         description="tend wounds that are already healed",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, 3)
 
@@ -1461,7 +1468,7 @@ def test_action_resolver_rejects_remote_hp_adjustment():
         state=state,
         description="finish the fleeing merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, -1, character_id="merchant")
 
@@ -1483,7 +1490,7 @@ def test_action_resolver_allows_colocated_hp_adjustment():
         state=state,
         description="bandage the merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, 2, character_id="merchant")
 
@@ -1502,7 +1509,7 @@ def test_action_resolver_cannot_revive_a_dead_character():
         state=state,
         description="bandage the fallen merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, 2, character_id="merchant")
 
@@ -1526,7 +1533,7 @@ def test_action_resolver_rejects_remote_inventory_mutations():
         state=state,
         description="make the distant merchant exchange evidence",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     take_result = take(ctx, "sealed ledger", character_id="merchant")
     drop_result = drop(ctx, "brass key", character_id="merchant")
@@ -1553,7 +1560,7 @@ def test_action_resolver_allows_colocated_character_to_take_item():
         state=state,
         description="hand the ledger to the merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = take(ctx, "sealed ledger", character_id="merchant")
 
@@ -1573,7 +1580,7 @@ def test_action_resolver_cannot_recreate_item_held_by_another_character():
         state=state,
         description="pick up the sealed letter from the empty crate",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     first_take = take(ctx, "sealed letter with black wax")
     recreate = create_item(ctx, "sealed letter with black wax")
@@ -1598,7 +1605,7 @@ def test_action_resolver_rejects_item_name_without_letters_or_numbers():
         state=state,
         description="find an unnamed object in the room",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = create_item(ctx, " - ")
 
@@ -1616,7 +1623,7 @@ def test_action_resolver_records_opened_item_state_and_blocks_reopening():
         state=state,
         description="open the sealed wax letter and read it",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     opened = change_item(ctx, "sealed wax letter", "opened wax letter")
     repeated = change_item(ctx, "sealed wax letter", "opened wax letter")
@@ -1637,7 +1644,7 @@ def test_add_detail_reports_unchanged_for_an_existing_location_feature():
         state=state,
         description="inspect the chalk sigil behind the bar",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = add_detail(ctx, "a chalk sigil behind the bar")
 
@@ -1655,7 +1662,7 @@ def test_action_resolver_lethal_damage_records_defeat_and_awards_xp():
         state=state,
         description="finish the wounded merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, -1, character_id="merchant")
 
@@ -1684,7 +1691,7 @@ def test_action_resolver_self_inflicted_lethal_damage_does_not_award_xp():
         state=state,
         description="drink the poisoned chalice",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, -1)
 
@@ -1711,7 +1718,7 @@ def test_action_resolver_reveals_known_npc_without_duplicating_identity():
         state=state,
         description="steady Alan after he emerges from the forest",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = create_npc(
         ctx,
@@ -1736,7 +1743,7 @@ def test_action_resolver_preserves_deferred_npc_relationship_identity():
         state=state,
         description="search the docks for Alan",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = create_npc(
         ctx,
@@ -1761,7 +1768,7 @@ def test_action_resolver_cannot_invent_a_revealed_npc_goal():
         state=state,
         description="search the docks for Alan after his suspicious withdrawal",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     assert "goal" not in signature(create_npc).parameters
 

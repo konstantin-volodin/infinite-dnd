@@ -19,7 +19,7 @@ def test_director_output_with_entity_and_quest():
         role="bailiff",
     )
     result = director_output(
-        None,
+        None,  # type: ignore[arg-type]
         event="Bailiff Coss arrives demanding the debt.",
         entity=entity,
         quest_id="q1",

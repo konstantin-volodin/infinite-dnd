@@ -461,7 +461,7 @@ def test_world_state_rejects_entity_ids_without_letters_or_numbers(
     with pytest.raises(
         ValidationError, match=rf"{entity_name} ids must contain a letter or number"
     ):
-        WorldState(**{field: {entity.id: entity}})
+        WorldState.model_validate({field: {entity.id: entity}})
 
 
 @pytest.mark.parametrize(
@@ -494,7 +494,7 @@ def test_world_state_rejects_entity_map_key_mismatches(field, entity_name, entit
         ValidationError,
         match=rf"{entity_name} map key 'alias' does not match entity id '{entity.id}'",
     ):
-        WorldState(**{field: {"alias": entity}})
+        WorldState.model_validate({field: {"alias": entity}})
 
 
 def test_world_state_rejects_slug_equivalent_faction_ids():

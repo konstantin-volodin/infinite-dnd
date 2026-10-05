@@ -10,6 +10,12 @@ from src.engine.state.operations import WorldOperations
 from src.world import list_scenarios
 
 
+def test_default_state_directory_follows_working_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    manager = StateManager(scenario="smuggler-cove")
+    assert manager.scenario_dir == tmp_path / "world-state" / "smuggler-cove"
+
+
 @pytest.mark.parametrize("scenario", list_scenarios())
 def test_init_state_for_scenario(scenario, tmp_path):
     manager = StateManager(scenario=scenario, state_dir=str(tmp_path))

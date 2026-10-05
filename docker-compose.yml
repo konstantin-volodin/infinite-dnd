@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
 
   # One game session per invocation: `docker compose run --rm game`. Not
-  # auto-restarted — run_game.py is one-shot (plays to --turns or quest
+  # auto-restarted — the game CLI is one-shot (plays to --turns or quest
   # resolution, then exits), and starting one is a deliberate action, not a
   # standing service.
   game:

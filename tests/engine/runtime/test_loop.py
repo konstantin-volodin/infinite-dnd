@@ -1,4 +1,6 @@
 import asyncio
+from unittest.mock import Mock
+from src.interface.session_log import Logger
 
 import pytest
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
@@ -175,7 +177,10 @@ def test_tick_rejects_npc_reveal_at_an_unsupported_remote_location(monkeypatch):
     state.locations["village-square"] = Location(id="village-square")
     logged_events = []
 
-    class CapturingLogger:
+    class CapturingLogger(Logger):
+        def __init__(self):
+            pass
+
         def log_event(self, event, **kwargs):
             logged_events.append((event, kwargs))
 
@@ -263,7 +268,7 @@ def test_tick_does_not_turn_a_named_company_into_a_character(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_crate)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", misclassify_company)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert "crimson-tide-trading-company" not in state.characters
     assert [event.text for event in state.history] == [
@@ -310,7 +315,7 @@ def test_tick_does_not_materialize_a_vague_placeholder_location(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_manifest)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", invent_placeholder)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert set(state.locations) == {"tavern"}
     assert [event.text for event in state.history] == [
@@ -347,7 +352,7 @@ def test_tick_does_not_place_a_previously_mentioned_npc_after_travel(monkeypatch
         "src.engine.runtime.loop.flow_dm", reveal_calla_from_prior_context
     )
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert state.characters["hero"].location == "servants-quarters"
     assert "calla" not in state.characters
@@ -385,7 +390,7 @@ def test_tick_does_not_place_a_remembered_npc_at_the_travel_destination(monkeypa
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", travel_to_foyer)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", place_calla_at_foyer)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert state.characters["hero"].location == "manor-foyer"
     assert state.characters["hero"].knowledge == [fact]
@@ -439,7 +444,7 @@ def test_tick_does_not_materialize_historical_people_from_a_roster(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_roster)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", materialize_historical_staff)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert set(state.characters) == {"hero"}
     assert [event.text for event in state.history] == [f"hero learns: {roster_fact}"]
@@ -478,7 +483,7 @@ def test_tick_skips_dm_item_already_created_by_the_action(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.resolve", create_journal)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", repeat_journal)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert state.locations["tavern"].items == ["Alan's leather journal"]
     assert [event.text for event in state.history] == [
@@ -1035,7 +1040,7 @@ def test_tick_advances_dialogue_objective_from_the_addressed_npcs_reply(monkeypa
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", answer_question)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
 
-    asyncio.run(tick("hero", state, 1, logger=None))
+    asyncio.run(tick("hero", state, 1, logger=Mock(spec=Logger)))
 
     assert quest.current_step == 1
     assert quest.steps == [
@@ -1302,7 +1307,7 @@ def test_tick_rejects_direct_final_completion_from_clue_discovery(
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_intent)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_clue)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert quest.status == "active"
     assert quest.current_step == len(quest.plan) - 1
@@ -1335,7 +1340,7 @@ def test_tick_rejects_intermediate_progress_from_unrelated_action(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_intent)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert quest.current_step == 0
     assert quest.steps == []
@@ -1380,7 +1385,7 @@ def test_tick_rejects_dialogue_progress_from_inspecting_a_roster(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_roster)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert quest.current_step == 0
     assert quest.steps == []
@@ -1438,7 +1443,7 @@ def test_tick_rejects_location_bound_progress_from_a_different_location(monkeypa
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_search)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert quest.current_step == 0
     assert quest.steps == []
@@ -1497,7 +1502,7 @@ def test_tick_rejects_search_progress_from_negative_clue_result(
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_search)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert quest.current_step == 0
     assert quest.steps == []
@@ -1519,7 +1524,7 @@ def test_tick_binds_tool_to_scheduled_actor(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_turn)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert (
         state.history[-1].text
@@ -1540,7 +1545,7 @@ def test_tick_ignores_minute_estimates_without_matching_events(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_turn)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert len(state.history) == 1
     assert state.history[0].minutes_elapsed == 2
@@ -1563,7 +1568,7 @@ def test_tick_clamps_negative_minute_estimates_for_later_events(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_turn)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert [event.minutes_elapsed for event in state.history] == [2, 0]
     assert state.minutes_elapsed == 2
@@ -1586,7 +1591,7 @@ def test_tick_does_not_charge_time_for_later_knowledge_event(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_turn)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert [event.minutes_elapsed for event in state.history] == [2, 0]
     assert state.minutes_elapsed == 2
@@ -1610,7 +1615,7 @@ def test_tick_rejects_dm_removal_of_active_player_character(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", remove_player)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert "hero" in state.characters
     assert state.history[-1].text == 'hero says: "I am still here."'
@@ -1653,7 +1658,7 @@ def test_tick_rejects_faction_clock_acceleration_for_travel(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_travel)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", accelerate_dawn)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert state.characters["hero"].location == "servants-quarters"
     assert state.factions["encroaching-dawn"].clocks[0].progress == 0
@@ -1695,7 +1700,7 @@ def test_tick_rejects_event_acceleration_for_elapsed_time_deadline(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", discuss_search)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", accelerate_dawn)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert state.minutes_elapsed == 2
     assert state.factions["encroaching-dawn"].clocks[0].progress == 0
@@ -1745,7 +1750,7 @@ def test_tick_allows_event_acceleration_for_action_driven_clock(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", confront_crew)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", accelerate_retaliation)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert state.factions["crew"].clocks[0].progress == 1
 
@@ -1756,7 +1761,10 @@ def test_tick_rejects_faction_acceleration_for_unobserved_evidence_discovery(
     state = _state()
     logged_events = []
 
-    class CapturingLogger:
+    class CapturingLogger(Logger):
+        def __init__(self):
+            pass
+
         def log_event(self, event, **kwargs):
             logged_events.append((event, kwargs))
 
@@ -1943,7 +1951,7 @@ def test_tick_completes_final_confrontation_with_punctuated_target_initials(
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", confront_smuggler)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_confrontation)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert quest.status == "completed"
     assert quest.current_step == len(quest.plan)
@@ -1982,7 +1990,7 @@ def test_tick_completes_speech_final_objective_from_grounded_dm_step(monkeypatch
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_confrontation)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert quest.status == "completed"
     assert quest.current_step == len(quest.plan)
@@ -2108,7 +2116,7 @@ def test_tick_completes_final_objective_when_dm_omits_quest_update(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_intent)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", omit_progress)
 
-    asyncio.run(tick("hero", state, 0, logger=None))
+    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
 
     assert quest.status == "completed"
     assert quest.current_step == len(quest.plan)

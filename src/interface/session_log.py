@@ -113,7 +113,9 @@ class Logger:
                 else None
             )
             metrics_after = (
-                self._metrics_reader() if metrics_before is not None else None
+                self._metrics_reader()
+                if metrics_before is not None and self._metrics_reader is not None
+                else None
             )
             self._log(
                 "agent_run_finished",

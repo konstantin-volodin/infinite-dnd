@@ -1,4 +1,6 @@
 import os
+from typing import cast
+from openai.types.shared import ReasoningEffort
 
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
@@ -25,11 +27,14 @@ def create_model() -> Model:
             provider=AnthropicProvider(),
         )
     if provider == "openai":
+        effort = os.getenv("OPENAI_REASONING_EFFORT", "medium")
+        if effort not in {"none", "minimal", "low", "medium", "high", "xhigh"}:
+            raise ValueError(f"Unsupported OPENAI_REASONING_EFFORT: {effort!r}")
         return OpenAIChatModel(
             os.getenv("OPENAI_MODEL", "gpt-5.6-luna"),
             provider=OpenAIProvider(api_key=os.getenv("OPENAI_API_KEY")),
             settings=OpenAIChatModelSettings(
-                openai_reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium"),
+                openai_reasoning_effort=cast(ReasoningEffort, effort),
             ),
         )
     return OpenAIChatModel(
