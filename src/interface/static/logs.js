@@ -11,11 +11,13 @@
       agent_run_finished: "",
       llm_message: "",
       parse_error: "ember",
+      run_error: "ember",
+      world_update_rejected: "amber",
     };
 
     const STORY_EVENTS = new Set([
       "game_session_started", "game_session_finished", "campaign_completed", "campaign_failed", "pc_death",
-      "resolved", "world_snapshot", "player_action", "parse_error",
+      "resolved", "world_snapshot", "player_action", "parse_error", "run_error", "world_update_rejected",
     ]);
 
     const state = {
@@ -185,7 +187,7 @@
         const suffix = entry.event === "agent_run_finished" ? " ✓" : " …";
         return `<span class="chip violet">${escapeHtml((entry.label || "run") + suffix)}</span>`;
       }
-      const label = { game_session_started: "session", game_session_finished: "session", campaign_completed: "victory", campaign_failed: "defeat", world_snapshot: "world", player_action: "player", pc_death: "death", resolved: (entry.raw || {}).tool || "resolved", parse_error: "error" }[entry.event] || entry.event.replaceAll("_", " ");
+      const label = { game_session_started: "session", game_session_finished: "session", campaign_completed: "victory", campaign_failed: "defeat", world_snapshot: "world", player_action: "player", pc_death: "death", resolved: (entry.raw || {}).tool || "resolved", parse_error: "error", run_error: "error", world_update_rejected: "rejected" }[entry.event] || entry.event.replaceAll("_", " ");
       return `<span class="chip ${EVENT_COLOR[entry.event] || ""}">${escapeHtml(label.toLowerCase())}</span>`;
     }
 
@@ -271,7 +273,7 @@
         <div class="insp-field"><div class="insp-label">Duration</div><div class="insp-value">${escapeHtml(formatDuration(summary.duration_s))} · ${escapeHtml(summary.turns_completed ?? 0)}/${escapeHtml(summary.max_turns ?? "?")} turns</div></div>
         <div class="insp-field"><div class="insp-label">Traffic</div><div class="insp-value">${escapeHtml(session.stats.run_count)} agent runs · ${escapeHtml(session.stats.llm_message_count)} LLM messages</div></div>
         <div class="insp-field"><div class="insp-label">Tokens</div><div class="insp-value mono">${escapeHtml(tokens.input_tokens.toLocaleString())} in · ${escapeHtml(tokens.output_tokens.toLocaleString())} out</div></div>
-        ${session.stats.error_count ? `<div class="insp-field"><div class="insp-label">Parse errors</div><div class="insp-value">${escapeHtml(session.stats.error_count)}</div></div>` : ""}
+        ${session.stats.error_count ? `<div class="insp-field"><div class="insp-label">Errors</div><div class="insp-value">${escapeHtml(session.stats.error_count)}</div></div>` : ""}
         <div class="insp-field"><div class="insp-label">File</div><div class="insp-value mono">${escapeHtml(session.path)}</div></div>
         <div class="empty">Select a log row to inspect its payload.</div>
       `;

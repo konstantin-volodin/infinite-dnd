@@ -1,6 +1,13 @@
 """Character prompt builders - system prompt and context."""
 
-from src.engine.state import Character, WorldState, characters_in_location, is_dialogue, quest_deadline_clocks
+from src.engine.state import (
+    Character,
+    WorldState,
+    characters_in_location,
+    connected_location_ids,
+    is_dialogue,
+    quest_deadline_clocks,
+)
 from src.engine.rules import get_health_status
 from src.agents.utils import render
 
@@ -16,6 +23,19 @@ def character_context(char: Character, state: WorldState) -> str:
     # internal status
     health_status = get_health_status(char)
     loc = state.locations.get(char.location)
+    if loc:
+        loc = loc.model_copy(update={"connections": connected_location_ids(state, loc.id)})
+    nearby_routes = [
+        (
+            connection_id,
+            [
+                onward_id
+                for onward_id in connected_location_ids(state, connection_id)
+                if onward_id != char.location
+            ],
+        )
+        for connection_id in (loc.connections if loc else [])
+    ]
     knowledge = char.knowledge[-5:] if char.knowledge else []
 
     # relevant quests
@@ -58,6 +78,7 @@ def character_context(char: Character, state: WorldState) -> str:
         char=char,
         health_status=health_status,
         loc=loc,
+        nearby_routes=nearby_routes,
         knowledge=knowledge,
         chronicle=state.chronicle[-3:],
         recent_events=recent_events,

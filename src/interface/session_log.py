@@ -13,6 +13,7 @@ from typing import Any, Callable, Iterator
 
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 
+from src.engine.state.identifiers import new_run_id
 from src.world import list_scenarios, read_manifest
 
 DEFAULT_LOG_DIR = Path("logs")
@@ -63,7 +64,7 @@ class Logger:
         self._metrics_reader = metrics_reader
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(exist_ok=True)
-        self.session_id = session_id or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.session_id = session_id or new_run_id()
         self.turn = 0
         self._active_runs: dict[str, list[dict[str, int]]] = {}
         mode = "a" if append else "w"
@@ -182,7 +183,7 @@ def _read_header(path: Path) -> dict[str, Any]:
         "max_turns": None,
         "scenario": None,
         "scenario_title": None,
-        "turns_completed": None,
+        "turns_completed": 0,
     }
     with path.open("r", encoding="utf-8") as handle:
         for raw_line in handle:
@@ -199,8 +200,10 @@ def _read_header(path: Path) -> dict[str, Any]:
                 header["max_turns"] = entry.get("max_turns")
                 header["scenario"] = entry.get("scenario")
                 header["scenario_title"] = entry.get("scenario_title")
-            elif event == "turn_started":
-                header["turns_completed"] = entry.get("turn")
+            elif event == "world_snapshot" and entry.get("turn") is not None:
+                # A started turn may crash before any of its state is durably
+                # recorded. Post-turn snapshots are the completion boundary.
+                header["turns_completed"] = entry["turn"]
             elif event == "game_session_finished":
                 header["turns_completed"] = entry.get("turns_completed", header["turns_completed"])
     return header
@@ -252,6 +255,11 @@ def load_session(path: Path) -> dict[str, Any]:
     entries = _load_entries(log_path)
     runs = _build_runs(entries)
     turns = sorted({entry["turn"] for entry in entries if entry.get("turn") is not None})
+    completed_turns = [
+        entry["turn"]
+        for entry in entries
+        if entry["event"] == "world_snapshot" and entry.get("turn") is not None
+    ]
     event_counts = Counter(entry["event"] for entry in entries)
 
     started = next((entry for entry in entries if entry["event"] == "game_session_started"), None)
@@ -275,7 +283,11 @@ def load_session(path: Path) -> dict[str, Any]:
             "scenario": scenario,
             "scenario_title": scenario_title,
             "max_turns": started["raw"].get("max_turns") if started else None,
-            "turns_completed": finished["raw"].get("turns_completed") if finished else (max(turns) if turns else 0),
+            "turns_completed": (
+                finished["raw"].get("turns_completed")
+                if finished
+                else max(completed_turns, default=0)
+            ),
             "started_at": entries[0].get("time") if entries else None,
             "finished_at": entries[-1].get("time") if entries else None,
             "duration_s": duration_s,
@@ -287,7 +299,7 @@ def load_session(path: Path) -> dict[str, Any]:
             "event_count": len(entries),
             "run_count": len(runs),
             "llm_message_count": event_counts.get("llm_message", 0),
-            "error_count": event_counts.get("parse_error", 0),
+            "error_count": sum(event_counts.get(event, 0) for event in ("parse_error", "run_error")),
         },
         "runs": runs,
         "entries": entries,
@@ -430,6 +442,21 @@ def _summarize_entry(entry: dict[str, Any], digest: dict[str, Any] | None) -> st
         return prefix
     if event == "resolved":
         return f"{entry.get('tool', 'tool')} resolved: {_compact(str(entry.get('result', '')), 160)}"
+    if event == "run_error":
+        error = entry.get("error", "Runtime error")
+        message = entry.get("message")
+        return f"{error}: {_compact(str(message), 160)}" if message else str(error)
+    if event == "world_update_rejected":
+        reason = str(entry.get("reason", "policy guard")).replace("_", " ")
+        if entry.get("update") == "create":
+            entity_type = entry.get("entity_type", "entity")
+            name = entry.get("name", "unknown")
+            location = f" at {entry['location']}" if entry.get("location") else ""
+            return f"Rejected {entity_type} creation '{name}'{location}: {reason}."
+        update = str(entry.get("update", "world update")).replace("_", " ")
+        target = entry.get("target_id", "unknown")
+        other = f" / '{entry['other_id']}'" if entry.get("other_id") else ""
+        return f"Rejected {update} '{target}'{other}: {reason}."
     return event.replace("_", " ")
 
 

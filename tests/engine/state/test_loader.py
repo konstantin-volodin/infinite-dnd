@@ -86,6 +86,16 @@ def test_latest_snapshot_name_uses_numeric_order(tmp_path):
     assert manager.latest_snapshot_name() == "world_state_10.json"
 
 
+def test_latest_snapshot_name_skips_corrupt_newer_snapshot(tmp_path):
+    manager = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
+    state = manager.init_state()
+    state.time = 2
+    manager.save_state(state)
+    (manager.state_dir / "world_state_3.json").write_text("incomplete", encoding="utf-8")
+
+    assert manager.latest_snapshot_name() == "world_state_2.json"
+
+
 def test_distinct_run_ids_do_not_collide(tmp_path):
     manager_a = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="run-a")
     manager_b = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="run-b")
@@ -122,10 +132,26 @@ def test_resume_selects_latest_run_with_snapshots(tmp_path):
     assert empty.latest_snapshot_name() is None
 
 
+def test_resume_ignores_newer_run_with_only_corrupt_snapshots(tmp_path):
+    intact = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="intact")
+    corrupt = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="corrupt")
+    intact.save_state(intact.init_state())
+    (corrupt.state_dir / "world_state_1.json").write_text("incomplete", encoding="utf-8")
+
+    resumed = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), resume=True)
+
+    assert resumed.run_id == "intact"
+    assert resumed.latest_snapshot_name() == "world_state_0.json"
+
+
 def test_run_id_auto_generated_when_omitted(tmp_path):
-    manager = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
-    assert isinstance(manager.run_id, str)
-    assert manager.run_id
+    manager_a = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
+    manager_b = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
+
+    assert isinstance(manager_a.run_id, str)
+    assert manager_a.run_id
+    assert manager_a.run_id != manager_b.run_id
+    assert manager_a.state_dir != manager_b.state_dir
 
 
 def test_init_state_backcompat_quest_without_plan(tmp_path, monkeypatch):

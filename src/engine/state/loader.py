@@ -4,9 +4,9 @@ import json
 import os
 import re
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
+from src.engine.state.identifiers import new_run_id
 from src.engine.state.models import (
     WorldState,
     Character,
@@ -27,6 +27,15 @@ def _snapshots(directory: Path):
             yield int(match.group(1)), path.stat().st_mtime, path.name
 
 
+def _is_loadable_snapshot(path: Path) -> bool:
+    """Return whether an automatically discovered snapshot is a valid world state."""
+    try:
+        WorldState.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 class StateManager:
     """Load, persist, and reset world state for a chosen scenario."""
 
@@ -45,17 +54,21 @@ class StateManager:
         self.scenario_dir = self.ROOT_DIR / Path(state_dir) / self.scenario
         self.scenario_dir.mkdir(parents=True, exist_ok=True)
         latest_run = self.latest_run_id() if resume and run_id is None else None
-        self.run_id = run_id or latest_run or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.run_id = run_id or latest_run or new_run_id()
         self.state_dir = self.scenario_dir / self.run_id
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
     def latest_run_id(self) -> str | None:
-        """Return the run whose newest valid snapshot was modified most recently."""
+        """Return the run whose newest loadable snapshot was modified most recently."""
         latest: tuple[float, str] | None = None
         for run_dir in self.scenario_dir.iterdir():
             if not run_dir.is_dir():
                 continue
-            mtimes = [mtime for _, mtime, _ in _snapshots(run_dir)]
+            mtimes = [
+                mtime
+                for _, mtime, name in _snapshots(run_dir)
+                if _is_loadable_snapshot(run_dir / name)
+            ]
             if mtimes:
                 candidate = (max(mtimes), run_dir.name)
                 if latest is None or candidate > latest:
@@ -106,9 +119,11 @@ class StateManager:
             return state
 
     def latest_snapshot_name(self) -> str | None:
-        """Return the highest numbered snapshot in this scenario, if any."""
+        """Return the highest numbered loadable snapshot in this run, if any."""
         latest: tuple[int, str] | None = None
         for num, _, name in _snapshots(self.state_dir):
+            if not _is_loadable_snapshot(self.state_dir / name):
+                continue
             if latest is None or num > latest[0]:
                 latest = (num, name)
         return latest[1] if latest else None

@@ -34,7 +34,11 @@ def test_advance_clock_clamps_and_triggers_consequence_once():
         "The Ash Guild completes 'Seize the docks'. The guild closes the harbor gates."
     ]
 
-    operations.advance_faction_clock("guild", "seize-docks")
+    stale_result = operations.advance_faction_clock("guild", "seize-docks")
+
+    assert stale_result == (
+        "Clock 'seize-docks' no longer advances — it is already completed."
+    )
     assert len(state.history) == 1
 
 

@@ -97,6 +97,23 @@ def test_play_panel_and_log_story_surface_terminal_campaign_outcomes():
     assert 'campaign_failed: "ember"' in logs_script
 
 
+def test_log_story_surfaces_runtime_errors():
+    script = read_asset("static/logs.js")
+
+    assert 'run_error: "ember"' in script
+    assert '"parse_error", "run_error"' in script
+    assert 'run_error: "error"' in script
+    assert '<div class="insp-label">Errors</div>' in script
+
+
+def test_log_story_surfaces_rejected_world_updates():
+    script = read_asset("static/logs.js")
+
+    assert 'world_update_rejected: "amber"' in script
+    assert '"run_error", "world_update_rejected"' in script
+    assert 'world_update_rejected: "rejected"' in script
+
+
 def test_log_filters_and_rows_expose_native_control_semantics():
     html = read_asset("templates/logs.html")
     script = read_asset("static/logs.js")

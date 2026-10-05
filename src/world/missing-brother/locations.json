@@ -17,5 +17,17 @@
     "connections": ["market-square", "trade-dock"],
     "features": ["guild ledger","meeting table"],
     "items": ["strange coin"]
+  },
+  {
+    "id": "forest-trail",
+    "description": "A narrow trail follows the river into dense alder woods. Broken branches and old boot prints mark the muddy verge.",
+    "connections": ["valley-bridge"],
+    "features": ["muddy boot prints", "snapped alder branches", "river overlook"]
+  },
+  {
+    "id": "trade-dock",
+    "description": "A weathered loading dock behind the guild hall. Flat-bottomed barges unload beneath a cramped dockmaster's office.",
+    "connections": ["guild-hall"],
+    "features": ["dockmaster's office", "cargo ledger", "river barges"]
   }
 ]

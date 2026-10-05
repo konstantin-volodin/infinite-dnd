@@ -123,6 +123,16 @@ def test_logger_uses_explicit_session_id(tmp_path):
     assert (tmp_path / "explicit-id.log").exists()
 
 
+def test_logger_auto_generated_session_ids_do_not_overwrite_each_other(tmp_path):
+    first = Logger(character_id="hero", max_turns=1, log_dir=tmp_path)
+    first.close()
+    second = Logger(character_id="hero", max_turns=1, log_dir=tmp_path)
+    second.close()
+
+    assert first.session_id != second.session_id
+    assert {path.stem for path in tmp_path.glob("*.log")} == {first.session_id, second.session_id}
+
+
 def test_logger_can_record_only_completed_turns_after_a_failed_turn(tmp_path):
     logger = Logger(character_id="hero", max_turns=3, log_dir=tmp_path)
     logger.log_turn(1)
@@ -131,6 +141,89 @@ def test_logger_can_record_only_completed_turns_after_a_failed_turn(tmp_path):
     session = load_session(list_logs(tmp_path)[0]["path"])
 
     assert session["summary"]["turns_completed"] == 0
+
+
+def test_interrupted_session_does_not_count_started_turn_as_completed(tmp_path):
+    path = tmp_path / "interrupted.log"
+    path.write_text(
+        '{"event":"game_session_started","character_id":"hero","max_turns":3}\n'
+        '{"event":"world_snapshot"}\n'
+        '{"event":"turn_started","turn":1}\n'
+        '{"event":"run_error","turn":1,"error":"RuntimeError"}\n',
+        encoding="utf-8",
+    )
+
+    assert list_logs(tmp_path)[0]["turns_completed"] == 0
+    assert load_session(path)["summary"]["turns_completed"] == 0
+
+
+def test_interrupted_session_counts_only_snapshotted_turns(tmp_path):
+    path = tmp_path / "interrupted.log"
+    path.write_text(
+        '{"event":"game_session_started","character_id":"hero","max_turns":3}\n'
+        '{"event":"world_snapshot"}\n'
+        '{"event":"turn_started","turn":1}\n'
+        '{"event":"world_snapshot","turn":1}\n'
+        '{"event":"turn_started","turn":2}\n',
+        encoding="utf-8",
+    )
+
+    assert list_logs(tmp_path)[0]["turns_completed"] == 1
+    session = load_session(path)
+    assert session["turns"] == [1, 2]
+    assert session["summary"]["turns_completed"] == 1
+
+
+def test_session_counts_and_describes_runtime_and_parse_errors(tmp_path):
+    path = tmp_path / "failed.log"
+    path.write_text(
+        '{"time":"2026-07-14T20:05:29","event":"run_error","error":"ModelAPIError","message":"Connection error."}\n'
+        'not json\n',
+        encoding="utf-8",
+    )
+
+    session = load_session(path)
+
+    assert session["stats"]["error_count"] == 2
+    runtime_error = next(entry for entry in session["entries"] if entry["event"] == "run_error")
+    assert runtime_error["summary"] == "ModelAPIError: Connection error."
+
+
+def test_session_describes_rejected_world_updates(tmp_path):
+    logger = Logger(character_id="hero", max_turns=1, log_dir=tmp_path)
+    logger.log_turn(1)
+    logger.log_event(
+        "world_update_rejected",
+        update="create",
+        entity_type="npc",
+        name="Dockmaster Alan",
+        location="trade-dock",
+        reason="unsupported_npc_evidence",
+    )
+    logger.log_event(
+        "world_update_rejected",
+        update="advance_faction_clock",
+        target_id="black-hull-crew",
+        other_id="retaliation",
+        reason="unsupported_faction_acceleration",
+    )
+    logger.close(turns_completed=1)
+
+    session = load_session(list_logs(tmp_path)[0]["path"])
+
+    rejections = [
+        entry for entry in session["entries"]
+        if entry["event"] == "world_update_rejected"
+    ]
+    assert rejections[0]["summary"] == (
+        "Rejected npc creation 'Dockmaster Alan' at trade-dock: "
+        "unsupported npc evidence."
+    )
+    assert rejections[1]["summary"] == (
+        "Rejected advance faction clock 'black-hull-crew' / 'retaliation': "
+        "unsupported faction acceleration."
+    )
+    assert session["event_counts"]["world_update_rejected"] == 2
 
 
 def test_logger_append_preserves_existing_session(tmp_path):

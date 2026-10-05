@@ -1,12 +1,16 @@
 import json
 
-from src.engine.state.models import Character, CharacterStats, HistoryEvent, Quest, WorldState
+from src.engine.state.models import Character, CharacterStats, HistoryEvent, Location, Quest, WorldState
 from src.interface.recap import build_recap, main
 
 
 def _state() -> WorldState:
     return WorldState(
         chronicle=["Long ago, the village burned.", "The hero was born in the ashes."],
+        locations={
+            "tavern": Location(id="tavern"),
+            "forest": Location(id="forest"),
+        },
         history=[
             HistoryEvent(text="Hero arrives at the tavern.", location="tavern", minutes_elapsed=30),
             HistoryEvent(text="Hero orders a drink.", location="tavern", minutes_elapsed=10),

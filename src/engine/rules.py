@@ -52,7 +52,7 @@ def resolve_check(
         modifier,
         total,
         total > opposing_total,
-        opposing_total,
+        difficulty,
         opposing_roll,
         opposing_modifier,
         opposing_total,

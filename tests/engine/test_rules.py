@@ -50,5 +50,6 @@ def test_check_uses_injected_d20_and_dc():
 
 def test_contested_check_rolls_both_sides_and_ties_favor_defender():
     result = resolve_check(10, modifier=2, opposing_modifier=4, rng=_Rolls(12, 10))
+    assert result.difficulty == 10
     assert result.total == result.opposing_total == 14
     assert result.success is False

@@ -4,7 +4,7 @@ Never call this mid-tick — tick() slices state.history by position (e.g. `stat
 to find events created during the current turn, and compaction shortens history in place.
 """
 
-from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.exceptions import ModelAPIError, UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
 from src.agents.dm.chronicler import ChroniclerDeps, agent as chronicler_agent
@@ -44,11 +44,13 @@ async def compact_history(state: WorldState, logger: Logger, replay: ReplayTape 
                 )
                 logger.log_messages("chronicle", result.all_messages())
             summary = result.output
-        except UsageLimitExceeded as exc:
-            print(f"  [limit] chronicle compaction ended: {exc}", flush=True)
+        except (ModelAPIError, UsageLimitExceeded) as exc:
+            print(f"  [fallback] chronicle compaction ended: {exc}", flush=True)
             summary = digest(archived)
         if replay:
             summary = replay.chronicle(summary)
 
+    if not summary.strip():
+        summary = digest(archived)
     state.chronicle.append(summary)
     del state.history[:-HISTORY_KEEP_RECENT]

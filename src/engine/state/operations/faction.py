@@ -1,6 +1,7 @@
 """Deterministic faction-agenda and progress-clock operations."""
 
 from src.engine.state.operations._base import _OpsBase
+from src.engine.state.queries import slugify
 
 
 _TERMINAL_QUEST_STATUSES = {"completed", "failed"}
@@ -12,13 +13,25 @@ class FactionOps(_OpsBase):
         if amount < 0:
             return "Cannot advance a faction clock by a negative amount."
 
-        faction = self.state.factions.get(faction_id)
+        faction_key = next(
+            (candidate for candidate in self.state.factions if slugify(candidate) == slugify(faction_id)),
+            None,
+        )
+        faction = self.state.factions.get(faction_key) if faction_key else None
         if not faction:
             return f"Cannot advance faction clock — faction '{faction_id}' not found."
 
-        clock = next((candidate for candidate in faction.clocks if candidate.id == clock_id), None)
+        clock = next(
+            (candidate for candidate in faction.clocks if slugify(candidate.id) == slugify(clock_id)),
+            None,
+        )
         if not clock:
             return f"Cannot advance faction clock — clock '{clock_id}' not found in faction '{faction_id}'."
+        if clock.consequence_triggered:
+            return (
+                f"Clock '{clock.id}' no longer advances — "
+                "it is already completed."
+            )
 
         linked_quest = self.state.quests.get(clock.fail_quest_id) if clock.fail_quest_id else None
         if linked_quest and linked_quest.status.lower() in _TERMINAL_QUEST_STATUSES:

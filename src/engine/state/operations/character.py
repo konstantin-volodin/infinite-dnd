@@ -6,11 +6,28 @@ import random
 
 from src.engine.rules import attack_damage, kill_xp
 from src.engine.state.operations._base import _OpsBase
+from src.engine.state.queries import resolve_character, slugify
 
 _XP_PER_LEVEL = 100
 
 
 class CharacterOps(_OpsBase):
+    def _record_defeat(self, victim_id: str, source_character_id: str | None = None) -> str:
+        """Record a character reaching zero HP and award an attributable defeat."""
+        victim = self.state.characters[victim_id]
+        participants = [victim_id]
+        if source_character_id and source_character_id != victim_id:
+            participants.insert(0, source_character_id)
+        self._log(f"{victim_id} falls dead.", victim.location, participants)
+
+        if source_character_id and source_character_id != victim_id:
+            return self.award_xp(
+                source_character_id,
+                kill_xp(victim),
+                reason=f"defeating {victim_id}",
+            )
+        return ""
+
     # ============ MOVEMENT ============
     def move_character(self, character_id: str, destination_id: str) -> str:
         char = self.state.characters.get(character_id)
@@ -29,7 +46,10 @@ class CharacterOps(_OpsBase):
     def speak(self, character_id: str, message: str, target_id: str | None = None) -> str:
         char = self.state.characters.get(character_id)
         if not char: return f"Cannot speak — character '{character_id}' not found."
-        if target_id and target_id not in self.state.characters: return f"Cannot speak to '{target_id}' — character not found."
+        target = self.state.characters.get(target_id) if target_id else None
+        if target_id and not target: return f"Cannot speak to '{target_id}' — character not found."
+        if target and target.location != char.location:
+            return f"Cannot speak to '{target_id}' — they are not in the same location."
 
         result = f"{character_id} says to {target_id}: \"{message}\"" if target_id else f"{character_id} says: \"{message}\""
         characters = [character_id, target_id] if target_id else [character_id]
@@ -65,15 +85,51 @@ class CharacterOps(_OpsBase):
         self._log(result, char.location, [character_id])
         return result
 
+    def rename_item(self, character_id: str, item: str, new_name: str) -> str:
+        """Record a durable state change to an item the character can access."""
+        char = self.state.characters.get(character_id)
+        if not char:
+            return f"Cannot change item — character '{character_id}' not found."
+
+        normalized_name = slugify(new_name)
+        if not normalized_name:
+            return "Cannot change item — new name must contain a letter or number."
+
+        location = self.state.locations.get(char.location)
+        if item in char.inventory:
+            container = char.inventory
+        elif location and item in location.items:
+            container = location.items
+        else:
+            return f"Cannot change '{item}' — {character_id} cannot access it."
+
+        item_index = container.index(item)
+        if slugify(item) == normalized_name:
+            return f"Item '{item}' unchanged."
+
+        for candidate_location in self.state.locations.values():
+            if any(slugify(existing) == normalized_name for existing in candidate_location.items):
+                return f"Cannot change item — '{new_name}' already exists at '{candidate_location.id}'."
+        for candidate_character in self.state.characters.values():
+            if any(slugify(existing) == normalized_name for existing in candidate_character.inventory):
+                return f"Cannot change item — '{new_name}' already belongs to '{candidate_character.id}'."
+
+        container[item_index] = new_name
+        result = f"{character_id} changes '{item}' into '{new_name}'."
+        self._log(result, char.location, [character_id])
+        return result
+
     def trade_item(self, buyer_id: str, seller_id: str, item: str, price: int) -> str:
         buyer = self.state.characters.get(buyer_id)
         if not buyer: return f"Cannot trade — character '{buyer_id}' not found."
 
         seller = self.state.characters.get(seller_id)
         if not seller: return f"Cannot trade — character '{seller_id}' not found."
+        if buyer_id == seller_id: return "Cannot trade — buyer and seller must be different characters."
+        if price < 0:
+            return "Cannot trade — price cannot be negative."
         if buyer.location != seller.location: return f"Cannot trade — '{buyer_id}' and '{seller_id}' are not in the same location."
         if item not in seller.inventory: return f"Cannot trade — '{seller_id}' doesn't have '{item}'."
-        price = max(0, price)
         if buyer.stats.gold < price: return f"Cannot trade — '{buyer_id}' doesn't have enough gold ({buyer.stats.gold} < {price})."
 
         seller.inventory.remove(item)
@@ -102,38 +158,65 @@ class CharacterOps(_OpsBase):
         self._log(result, attacker.location, [attacker_id, target_id])
 
         if target.stats.hp == 0:
-            self._log(f"{target_id} falls dead.", attacker.location, [attacker_id, target_id])
-            result += " " + self.award_xp(attacker_id, kill_xp(target), reason=f"defeating {target_id}")
+            result += " " + self._record_defeat(target_id, attacker_id)
         return result
 
     # ============ STATS ============
-    def damage(self, character_id: str, amount: int) -> str:
+    def damage(
+        self,
+        character_id: str,
+        amount: int,
+        *,
+        source_character_id: str | None = None,
+    ) -> str:
         char = self.state.characters.get(character_id)
         if not char: return f"Cannot damage — character '{character_id}' not found."
+        if amount < 0: return "Cannot damage — amount cannot be negative."
+        if source_character_id and source_character_id not in self.state.characters:
+            return f"Cannot damage — source character '{source_character_id}' not found."
 
-        amount = max(0, amount)
+        previous_hp = char.stats.hp
         char.stats.hp = max(0, char.stats.hp - amount)
-        result = f"{character_id} takes {amount} damage. HP: {char.stats.hp}/{char.stats.max_hp}."
-        self._log(result, char.location, [character_id])
+        applied = previous_hp - char.stats.hp
+        result = f"{character_id} takes {applied} damage. HP: {char.stats.hp}/{char.stats.max_hp}."
+        if applied:
+            participants = [character_id]
+            if source_character_id and source_character_id != character_id:
+                participants.insert(0, source_character_id)
+            self._log(result, char.location, participants)
+        if source_character_id is not None and previous_hp > 0 and char.stats.hp == 0:
+            defeat_result = self._record_defeat(character_id, source_character_id)
+            if defeat_result:
+                result += " " + defeat_result
         return result
 
     def heal(self, character_id: str, amount: int) -> str:
         char = self.state.characters.get(character_id)
-        if not char: return f"Cannot heal — character '{character_id}' not found."
+        if not char:
+            return f"Cannot heal — character '{character_id}' not found."
+        if amount < 0:
+            return "Cannot heal — amount cannot be negative."
+        if char.stats.hp <= 0:
+            return f"Cannot heal — '{character_id}' is dead."
 
-        amount = max(0, amount)
+        previous_hp = char.stats.hp
         char.stats.hp = min(char.stats.max_hp, char.stats.hp + amount)
-        result = f"{character_id} heals {amount} HP. HP: {char.stats.hp}/{char.stats.max_hp}."
-        self._log(result, char.location, [character_id])
+        applied = char.stats.hp - previous_hp
+        result = f"{character_id} heals {applied} HP. HP: {char.stats.hp}/{char.stats.max_hp}."
+        if applied:
+            self._log(result, char.location, [character_id])
         return result
 
     def level_up(self, character_id: str, hp_increase: int = 5) -> str:
         char = self.state.characters.get(character_id)
         if not char: return f"Cannot level up — character '{character_id}' not found."
+        if hp_increase < 0: return "Cannot level up — HP increase cannot be negative."
 
+        was_alive = char.stats.hp > 0
         char.stats.level += 1
         char.stats.max_hp += hp_increase
-        char.stats.hp = char.stats.max_hp
+        if was_alive:
+            char.stats.hp = char.stats.max_hp
         result = f"{character_id} leveled up to level {char.stats.level}. Max HP increased to {char.stats.max_hp}."
         self._log(result, char.location, [character_id])
         return result
@@ -141,8 +224,8 @@ class CharacterOps(_OpsBase):
     def award_xp(self, character_id: str, amount: int, reason: str = "") -> str:
         char = self.state.characters.get(character_id)
         if not char: return f"Cannot award XP — character '{character_id}' not found."
+        if amount < 0: return "Cannot award XP — amount cannot be negative."
 
-        amount = max(0, amount)
         char.stats.xp += amount
         suffix = f" ({reason})" if reason else ""
         result = f"{character_id} earns {amount} XP{suffix}."
@@ -158,7 +241,12 @@ class CharacterOps(_OpsBase):
 
         receiver = self.state.characters.get(to_character_id)
         if not receiver: return f"Cannot give gold — character '{to_character_id}' not found."
-        amount = max(0, amount)
+        if from_character_id == to_character_id:
+            return "Cannot give gold — giver and receiver must be different characters."
+        if amount < 0:
+            return "Cannot give gold — amount cannot be negative."
+        if giver.location != receiver.location:
+            return f"Cannot give gold — '{from_character_id}' and '{to_character_id}' are not in the same location."
         if giver.stats.gold < amount: return f"Cannot give gold — '{from_character_id}' only has {giver.stats.gold}."
 
         giver.stats.gold -= amount
@@ -185,17 +273,22 @@ class CharacterOps(_OpsBase):
 
     # ============ RELATIONSHIPS ============
     def update_relationship(self, character_id: str, target_id: str, relation: str) -> str:
-        char = self.state.characters.get(character_id)
+        char = resolve_character(self.state, character_id)
         if not char: return f"Cannot update relationship — character '{character_id}' not found."
-        if target_id not in self.state.characters: return f"Cannot update relationship — character '{target_id}' not found."
+        target = resolve_character(self.state, target_id)
+        if not target: return f"Cannot update relationship — character '{target_id}' not found."
+        if char.id == target.id:
+            return "Cannot update relationship — character and target must be different characters."
 
-        char.relationships[target_id] = relation
-        return f"{character_id}'s relationship with {target_id} is now '{relation}'."
+        char.relationships[target.id] = relation
+        return f"{char.id}'s relationship with {target.id} is now '{relation}'."
 
     # ============ KNOWLEDGE ============
     def add_knowledge(self, character_id: str, fact: str) -> str:
         char = self.state.characters.get(character_id)
         if not char: return f"Cannot add knowledge — character '{character_id}' not found."
+        if not fact.strip():
+            return "Cannot add knowledge — fact cannot be blank."
         if fact in char.knowledge: return f"{character_id} already knows that."
 
         char.knowledge.append(fact)

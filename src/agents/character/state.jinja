@@ -100,6 +100,13 @@ Everything is calm... for now.
 - *bugged location*
 {% endif %}
 
+{% if nearby_routes %}
+## 🧭 nearby routes
+{% for connection_id, onward_ids in nearby_routes %}
+- via **{{ connection_id }}**: {{ onward_ids | join(', ') if onward_ids else 'dead end' }}
+{% endfor %}
+{% endif %}
+
 ## ✅ tool call options
 {% if speak_targets %}
 - **valid `speak.target` ids right now:** {{ speak_targets | join(', ') }}
@@ -108,7 +115,9 @@ Everything is calm... for now.
 {% endif %}
 - for `travel.location`, use one of the connected places listed above under **about my location**
 - **use `action`** to search, inspect, interact with features/items, or attempt something concrete tied to my goal.
-- **use `action`** also to ask around or discover anything not listed above.
+- never use `action` to move to a known different location; use `travel` so the world records the movement.
+- never use `action` to search, examine, or otherwise interact with a known different location; travel there first.
+- **use `action`** to ask around generically or discover anything not listed above, but never to directly interact with a known person who is not here; locate or travel to them first.
 - **use `attack`** only for real violence — it deals damage and can kill.
 - if I want to pause and let events unfold, I can use `wait`
 

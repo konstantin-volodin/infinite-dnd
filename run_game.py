@@ -37,11 +37,11 @@ def _prompt_new_character(locations: list[str], existing_ids: set[str]) -> dict:
     }
 
 
-def main() -> None:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an Infinite DnD session.")
     parser.add_argument("--scenario", default=None, help="Scenario id under src/world/ (default: random).")
     parser.add_argument("--character", default=None, help="PC id to play as (default: scenario's manifest pc).")
-    parser.add_argument("--turns", type=int, default=50, help="Max turns to run.")
+    parser.add_argument("--turns", "--turn", dest="turns", type=int, default=50, help="Max turns to run.")
     parser.add_argument("--new-character", action="store_true", help="Create a new PC interactively instead of playing a scenario's preset character.")
     parser.add_argument("--interactive", action="store_true", help="Play the PC's turns yourself from the console instead of the character agent.")
     parser.add_argument("--web", action="store_true", help="Play PC turns in the World dashboard (start infinite-dnd-state first).")
@@ -49,9 +49,14 @@ def main() -> None:
     replay_group = parser.add_mutually_exclusive_group()
     replay_group.add_argument("--record-replay", metavar="PATH", help="Record structured agent outputs to a JSONL replay tape.")
     replay_group.add_argument("--replay", metavar="PATH", help="Replay structured agent outputs from a JSONL tape without character, DM, or director calls.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.interactive and args.web:
         parser.error("--interactive and --web cannot be used together")
+    return args
+
+
+def main() -> None:
+    args = _parse_args()
 
     scenario = args.scenario
     new_character = None
@@ -70,7 +75,7 @@ def main() -> None:
         tape = None
     server = LlamaServer() if not args.replay and os.getenv("LLM_PROVIDER", "local") == "local" else nullcontext()
     with server:
-        run_game(
+        succeeded = run_game(
             character_id=args.character,
             max_turns=args.turns,
             scenario=scenario,
@@ -80,6 +85,8 @@ def main() -> None:
                 console_pc_controller if args.interactive else make_web_pc_controller(args.web_url) if args.web else None
             ),
         )
+    if not succeeded:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

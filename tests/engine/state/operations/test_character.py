@@ -41,6 +41,18 @@ def test_take_drop_item(state, ops):
     assert "ale" in state.locations["tavern"].items
 
 
+# ============ DIALOGUE ============
+
+def test_speak_rejects_remote_target_without_logging(state, ops):
+    ops.move_character("hero", "forest")
+    history_before = len(state.history)
+
+    result = ops.speak("hero", "Can you hear me?", target_id="merchant")
+
+    assert "not in the same location" in result
+    assert len(state.history) == history_before
+
+
 # ============ COMBAT ============
 
 class _FixedRng:
@@ -73,7 +85,7 @@ def test_attack_validation(state, ops):
     ops.damage("merchant", 100)
     assert "already dead" in ops.attack("hero", "merchant")
     ops.damage("hero", 100)
-    ops.heal("merchant", 100)
+    state.characters["merchant"].stats.hp = 1
     assert "is dead" in ops.attack("hero", "merchant")
 
 
@@ -84,17 +96,52 @@ def test_damage_heal(state, ops):
     assert state.characters["hero"].stats.hp == 12
     ops.heal("hero", 3)
     assert state.characters["hero"].stats.hp == 15
-    ops.damage("hero", 100)
-    assert state.characters["hero"].stats.hp == 0
-    ops.heal("hero", 100)
-    assert state.characters["hero"].stats.hp == 20
 
 
-def test_damage_and_heal_clamp_negative_amounts(state, ops):
-    assert "takes 0 damage" in ops.damage("hero", -5)
-    assert "heals 0 HP" in ops.heal("hero", -5)
+def test_damage_and_heal_report_only_applied_hp_change(state, ops):
+    damage_result = ops.damage("hero", 8)
+    heal_result = ops.heal("hero", 100)
 
-    assert state.characters["hero"].stats.hp == 20
+    assert "takes 8 damage" in damage_result
+    assert "heals 8 HP" in heal_result
+    assert state.history[-2].text == damage_result
+    assert state.history[-1].text == heal_result
+
+
+def test_heal_cannot_revive_a_dead_character(state, ops):
+    ops.damage("merchant", 4)
+    ops.attack("hero", "merchant", rng=_FixedRng())
+    history_before = list(state.history)
+
+    result = ops.heal("merchant", 3)
+
+    assert result == "Cannot heal — 'merchant' is dead."
+    assert state.characters["merchant"].stats.hp == 0
+    assert state.history == history_before
+
+
+def test_zero_effect_damage_and_heal_do_not_mutate_history(state, ops):
+    state.characters["merchant"].stats.hp = 0
+
+    damage_result = ops.damage("merchant", 5)
+    heal_result = ops.heal("hero", 5)
+
+    assert "takes 0 damage" in damage_result
+    assert "heals 0 HP" in heal_result
+    assert state.history == []
+
+
+def test_damage_and_heal_reject_negative_amounts_without_mutating_state(state, ops):
+    hp_before = state.characters["hero"].stats.hp
+    history_before = list(state.history)
+
+    damage_result = ops.damage("hero", -5)
+    heal_result = ops.heal("hero", -5)
+
+    assert "amount cannot be negative" in damage_result
+    assert "amount cannot be negative" in heal_result
+    assert state.characters["hero"].stats.hp == hp_before
+    assert state.history == history_before
 
 
 def test_level_up(state, ops):
@@ -104,16 +151,48 @@ def test_level_up(state, ops):
     assert state.characters["hero"].stats.hp == 25
 
 
+def test_level_up_does_not_revive_a_dead_character(state, ops):
+    char = state.characters["hero"]
+    char.stats.hp = 0
+
+    ops.level_up("hero")
+
+    assert char.stats.level == 2
+    assert char.stats.max_hp == 25
+    assert char.stats.hp == 0
+
+
+def test_level_up_rejects_negative_hp_increase_without_mutating_state(state, ops):
+    char = state.characters["hero"]
+    stats_before = char.stats.model_copy(deep=True)
+    history_before = list(state.history)
+
+    result = ops.level_up("hero", hp_increase=-10)
+
+    assert "HP increase cannot be negative" in result
+    assert char.stats == stats_before
+    assert state.history == history_before
+
+
 def test_award_xp(state, ops):
     history_before = len(state.history)
     ops.award_xp("hero", 25, reason="slaying goblins")
     assert state.characters["hero"].stats.xp == 25
     assert state.history[-1].text == "hero earns 25 XP (slaying goblins)."
-    ops.award_xp("hero", -10)  # clamped to 0, still logs
-    assert state.characters["hero"].stats.xp == 25
-    assert state.history[-1].text == "hero earns 0 XP."
-    assert len(state.history) == history_before + 2
+    assert len(state.history) == history_before + 1
     assert "Cannot award XP" in ops.award_xp("ghost", 10)
+
+
+def test_award_xp_rejects_negative_amount_without_mutating_state(state, ops):
+    char = state.characters["hero"]
+    stats_before = char.stats.model_copy(deep=True)
+    history_before = list(state.history)
+
+    result = ops.award_xp("hero", -10, reason="invalid adjustment")
+
+    assert "amount cannot be negative" in result
+    assert char.stats == stats_before
+    assert state.history == history_before
 
 
 def test_award_xp_auto_levels(state, ops):
@@ -122,6 +201,19 @@ def test_award_xp_auto_levels(state, ops):
     assert state.characters["hero"].stats.level == 3
     assert state.characters["hero"].stats.max_hp == 30
     assert "leveled up to level 3" in msg
+
+
+def test_award_xp_auto_level_does_not_revive_a_dead_character(state, ops):
+    char = state.characters["hero"]
+    char.stats.hp = 0
+    char.stats.xp = 90
+
+    msg = ops.award_xp("hero", 10, reason="quest progress")
+
+    assert char.stats.level == 2
+    assert char.stats.max_hp == 25
+    assert char.stats.hp == 0
+    assert "leveled up to level 2" in msg
 
 
 def test_give_gold(state, ops):
@@ -133,6 +225,52 @@ def test_give_gold(state, ops):
     assert state.characters["hero"].stats.gold == 6  # unchanged
     assert "Cannot give gold" in ops.give_gold("ghost", "merchant", 1)  # unknown giver
     assert "Cannot give gold" in ops.give_gold("hero", "ghost", 1)  # unknown receiver
+
+
+def test_give_gold_rejects_remote_receiver_without_mutating_state(state, ops):
+    state.characters["hero"].stats.gold = 10
+    ops.move_character("hero", "forest")
+    history_before = len(state.history)
+
+    result = ops.give_gold("hero", "merchant", 4)
+
+    assert "not in the same location" in result
+    assert state.characters["hero"].stats.gold == 10
+    assert state.characters["merchant"].stats.gold == 0
+    assert len(state.history) == history_before
+
+
+def test_transactions_reject_same_character_without_mutating_state(state, ops):
+    hero = state.characters["hero"]
+    hero.stats.gold = 10
+    inventory_before = list(hero.inventory)
+    history_before = len(state.history)
+
+    gold_result = ops.give_gold("hero", "hero", 4)
+    trade_result = ops.trade_item("hero", "hero", "sword", 4)
+
+    assert "different characters" in gold_result
+    assert "different characters" in trade_result
+    assert hero.stats.gold == 10
+    assert hero.inventory == inventory_before
+    assert len(state.history) == history_before
+
+
+def test_transactions_reject_negative_values_without_mutating_state(state, ops):
+    hero = state.characters["hero"]
+    merchant = state.characters["merchant"]
+    hero.stats.gold = 10
+    inventories_before = (list(hero.inventory), list(merchant.inventory))
+    history_before = len(state.history)
+
+    gold_result = ops.give_gold("hero", "merchant", -4)
+    trade_result = ops.trade_item("hero", "merchant", "potion", -4)
+
+    assert "cannot be negative" in gold_result
+    assert "cannot be negative" in trade_result
+    assert (hero.stats.gold, merchant.stats.gold) == (10, 0)
+    assert (hero.inventory, merchant.inventory) == inventories_before
+    assert len(state.history) == history_before
 
 
 # ============ TRADE ============
@@ -166,6 +304,23 @@ def test_relationships(state, ops):
     assert state.characters["hero"].relationships["merchant"] == "friendly"
 
 
+def test_relationships_normalize_character_ids(state, ops):
+    result = ops.update_relationship("HERO", "Merchant", "friendly")
+
+    assert "hero's relationship with merchant" in result
+    assert state.characters["hero"].relationships == {"merchant": "friendly"}
+
+
+def test_relationships_reject_slug_equivalent_self_target_without_mutating(state, ops):
+    hero = state.characters["hero"]
+    hero.relationships = {"merchant": "friendly"}
+
+    result = ops.update_relationship("HERO", "hero", "conflicted")
+
+    assert "must be different characters" in result
+    assert hero.relationships == {"merchant": "friendly"}
+
+
 # ============ KNOWLEDGE ============
 
 def test_knowledge(state, ops):
@@ -177,3 +332,13 @@ def test_knowledge(state, ops):
     ops.add_knowledge("hero", "The cave has a hidden passage")  # idempotent — no new event
     assert state.characters["hero"].knowledge.count("The cave has a hidden passage") == 1
     assert len(state.history) == history_before + 1
+
+
+def test_knowledge_rejects_blank_fact_without_mutating(state, ops):
+    history_before = list(state.history)
+
+    result = ops.add_knowledge("hero", "  \t\n  ")
+
+    assert result == "Cannot add knowledge — fact cannot be blank."
+    assert state.characters["hero"].knowledge == []
+    assert state.history == history_before

@@ -5,7 +5,15 @@ from dataclasses import dataclass, replace
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
 from pydantic_ai.tools import ToolDefinition
 
-from src.engine.state import Character, WorldState, characters_in_location, connected_location_ids
+from src.engine.state import (
+    Character,
+    WorldState,
+    characters_in_location,
+    connected_location_ids,
+    resolve_character,
+    resolve_location_id,
+    slugify,
+)
 from src.agents.utils import create_model
 from .context import character_context, character_system
 from .tools import Ability, Action, Attack, CharacterTool, Check, Speak, Travel, Wait
@@ -27,6 +35,189 @@ def _living_targets(ctx: RunContext[CharacterDeps]) -> list[str]:
 
 def _travel_options(ctx: RunContext[CharacterDeps]) -> list[str]:
     return connected_location_ids(ctx.deps.state, ctx.deps.char.location)
+
+
+_DIRECT_INTERACTION_VERBS = (
+    "ask",
+    "confront",
+    "give",
+    "grab",
+    "greet",
+    "interact",
+    "interrogate",
+    "meet",
+    "persuad",
+    "question",
+    "speak",
+    "talk",
+    "tell",
+    "threaten",
+    "touch",
+    "trade",
+)
+
+_MOVEMENT_VERBS = {
+    "chase",
+    "chased",
+    "chases",
+    "chasing",
+    "fled",
+    "flee",
+    "fleeing",
+    "flees",
+    "follow",
+    "followed",
+    "following",
+    "follows",
+    "go",
+    "goes",
+    "going",
+    "head",
+    "headed",
+    "heading",
+    "heads",
+    "move",
+    "moved",
+    "moves",
+    "moving",
+    "proceed",
+    "proceeded",
+    "proceeding",
+    "proceeds",
+    "pursue",
+    "pursued",
+    "pursues",
+    "pursuing",
+    "ran",
+    "return",
+    "returned",
+    "returning",
+    "returns",
+    "run",
+    "running",
+    "runs",
+    "travel",
+    "traveled",
+    "traveling",
+    "travelled",
+    "travelling",
+    "travels",
+    "walk",
+    "walked",
+    "walking",
+    "walks",
+    "went",
+}
+
+_LOCATION_INTERACTION_VERBS = {
+    "examine",
+    "examined",
+    "examines",
+    "examining",
+    "explore",
+    "explored",
+    "explores",
+    "exploring",
+    "inspect",
+    "inspected",
+    "inspecting",
+    "inspects",
+    "investigate",
+    "investigated",
+    "investigates",
+    "investigating",
+    "scout",
+    "scouted",
+    "scouting",
+    "scouts",
+    "search",
+    "searched",
+    "searches",
+    "searching",
+    "survey",
+    "surveyed",
+    "surveying",
+    "surveys",
+}
+_REMOTE_REFERENCE_LINKS = {"about", "from", "of", "regarding"}
+
+
+def _remote_action_character(
+    ctx: RunContext[CharacterDeps],
+    description: str,
+    target: str | None,
+) -> Character | None:
+    """Return a known remote character targeted by a direct free-form action."""
+    actor = ctx.deps.char
+    state = ctx.deps.state
+
+    if explicit_target := resolve_character(state, target):
+        return explicit_target if explicit_target.location != actor.location else None
+
+    words = set(slugify(description).split("-"))
+    if not any(word.startswith(prefix) for word in words for prefix in _DIRECT_INTERACTION_VERBS):
+        return None
+
+    for character in state.characters.values():
+        if character.id == actor.id or character.location == actor.location:
+            continue
+        id_words = {word for word in slugify(character.id).split("-") if len(word) >= 3}
+        if words & id_words:
+            return character
+    return None
+
+
+def remote_action_location(
+    state: WorldState,
+    actor: Character,
+    description: str,
+    target: str | None,
+) -> tuple[str, str] | None:
+    """Return a known remote location and the invalid action kind targeting it."""
+    words = slugify(description).split("-")
+    movement_positions = [
+        index
+        for index, word in enumerate(words)
+        if word in _MOVEMENT_VERBS
+    ]
+    interaction_positions = [
+        index
+        for index, word in enumerate(words)
+        if word in _LOCATION_INTERACTION_VERBS
+    ]
+
+    explicit_target = resolve_location_id(state, target)
+    candidates = [explicit_target] if explicit_target else list(state.locations)
+
+    for location_id in candidates:
+        if not location_id or location_id == actor.location:
+            continue
+        location_words = slugify(location_id).split("-")
+        location_positions = [
+            index
+            for index in range(len(words) - len(location_words) + 1)
+            if words[index:index + len(location_words)] == location_words
+        ]
+
+        # An explicit location target with no corresponding prose phrase means
+        # the action is directed at that location rather than merely referring
+        # to it (for example, ``target=forest, description='search it'``).
+        if explicit_target and not location_positions:
+            if movement_positions:
+                return location_id, "movement"
+            if interaction_positions:
+                return location_id, "interaction"
+
+        for index in location_positions:
+            if any(0 < index - position <= 4 for position in movement_positions):
+                return location_id, "movement"
+            for position in interaction_positions:
+                if not 0 < index - position <= 6:
+                    continue
+                bridge = words[position + 1:index]
+                if not (_REMOTE_REFERENCE_LINKS & set(bridge)):
+                    return location_id, "interaction"
+    return None
 
 
 def _prepare_output_tools(
@@ -104,6 +295,22 @@ def action_output(
     new_goal: str | None = None,
 ) -> Action:
     """take a concrete action — search, examine, attempt, interact, discover. describe what and how in one plain sentence — no flourishes. use this when you can make progress, not just when speak/travel don't fit."""
+    if remote_location := remote_action_location(ctx.deps.state, ctx.deps.char, description, target):
+        location_id, action_kind = remote_location
+        if action_kind == "movement":
+            raise ModelRetry(
+                f"Cannot move to {location_id!r} with action — movement requires canonical travel. "
+                "Use travel when the destination is connected; otherwise discover a route first."
+            )
+        raise ModelRetry(
+            f"Cannot interact with {location_id!r} from {ctx.deps.char.location!r} using action. "
+            "Travel there before searching, examining, or investigating it."
+        )
+    if remote_character := _remote_action_character(ctx, description, target):
+        raise ModelRetry(
+            f"Cannot interact with {remote_character.id!r} — they are not in the same location. "
+            "Travel to or locate them before attempting the direct interaction."
+        )
     return Action(actor=ctx.deps.char.id, description=description, target=target, remember=remember, new_goal=new_goal)
 
 

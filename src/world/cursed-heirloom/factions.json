@@ -9,6 +9,7 @@
         "name": "Dawn breaks",
         "progress": 0,
         "segments": 6,
+        "event_acceleration": false,
         "consequence": "Dawn spills across Thorne Manor. Without the Oak Circlet, Great-aunt Vesna succumbs to the curse.",
         "fail_quest_id": "find-the-circlet"
       }

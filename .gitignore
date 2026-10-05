@@ -12,6 +12,7 @@ coverage/
 .pytest_cache/
 .pytest-tmp*/
 /tmp/pytest-*/
+.tmp/
 
 # Production
 build/

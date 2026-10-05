@@ -42,12 +42,56 @@ def test_resolve_character(state):
     assert resolve_character(state, "ghost") is None
 
 
+def test_resolve_character_ignores_article_and_title_order(state):
+    state.characters["alan-the-dockmaster"] = Character(
+        id="alan-the-dockmaster",
+        role="dockmaster",
+        location="tavern",
+    )
+
+    assert resolve_character(state, "alan-dockmaster").id == "alan-the-dockmaster"
+    assert resolve_character(state, "dockmaster-alan").id == "alan-the-dockmaster"
+
+
+def test_resolve_character_rejects_ambiguous_identity_alias(state):
+    state.characters["alan-the-dockmaster"] = Character(
+        id="alan-the-dockmaster",
+        role="dockmaster",
+        location="tavern",
+    )
+    state.characters["dockmaster-alan"] = Character(
+        id="dockmaster-alan",
+        role="dockmaster",
+        location="forest",
+    )
+
+    assert resolve_character(state, "alan-dockmaster") is None
+
+
+def test_resolve_character_rejects_ambiguous_partial_match(state):
+    state.characters["bram-the-brave"] = Character(
+        id="bram-the-brave",
+        role="guard",
+        location="tavern",
+    )
+
+    assert resolve_character(state, "bram") is None
+    assert resolve_character(state, "bram the bold").id == "bram-the-bold"
+
+
 def test_resolve_location_id(state):
     assert resolve_location_id(state, "tavern") == "tavern"
     assert resolve_location_id(state, "Tavern") == "tavern"
     assert resolve_location_id(state, "for") == "forest"
     assert resolve_location_id(state, None) is None
     assert resolve_location_id(state, "void") is None
+
+
+def test_resolve_location_id_rejects_ambiguous_partial_match(state):
+    state.locations["forest-edge"] = Location(id="forest-edge")
+
+    assert resolve_location_id(state, "for") is None
+    assert resolve_location_id(state, "forest") == "forest"
 
 
 def test_characters_in_location(state):

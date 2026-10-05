@@ -71,7 +71,9 @@ def dm_output(
     quest_modifies = [
         Modify(action="update_quest", target_id=u.quest_id, status=u.new_status, step=u.step, advance=u.advance)
         for u in quest_updates
-        if u.new_status or u.step or u.advance
+        # A step describes a real objective/status transition; by itself it is
+        # partial-progress noise and would duplicate later accomplished steps.
+        if u.new_status or u.advance
     ]
     relationship_modifies = [
         Modify(action="update_relationship", target_id=u.character_id, other_id=u.target_id, reason=u.relation)

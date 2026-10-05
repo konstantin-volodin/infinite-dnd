@@ -1,6 +1,13 @@
 """Action resolver prompt builders - converts character actions into state changes."""
 
-from src.engine.state import Character, WorldState, resolve_character, resolve_location_id, slugify
+from src.engine.state import (
+    Character,
+    WorldState,
+    connected_location_ids,
+    resolve_character,
+    resolve_location_id,
+    slugify,
+)
 from src.engine.rules import get_health_status
 from src.agents.utils import render
 
@@ -31,11 +38,18 @@ def action_resolver_context(char: Character, state: WorldState, description: str
     """Build the action resolver context."""
 
     loc = state.locations.get(char.location)
+    if loc:
+        loc = loc.model_copy(update={"connections": connected_location_ids(state, loc.id)})
     recent_events = [event.text for event in state.history[-8:]]
     others = [
         f"{other.id} ({other.role})" if other.role else other.id
         for other in state.characters.values()
         if other.location == char.location and other.id != char.id
+    ]
+    known_characters = [
+        other
+        for other in state.characters.values()
+        if other.id != char.id
     ]
     quests = [
         quest
@@ -57,6 +71,7 @@ def action_resolver_context(char: Character, state: WorldState, description: str
         target_item=target_item,
         loc=loc,
         others=others,
+        known_characters=known_characters,
         quests=quests,
         chronicle=state.chronicle[-3:],
         recent_events=recent_events,

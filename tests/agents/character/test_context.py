@@ -45,6 +45,43 @@ def test_context_includes_location_description_as_an_actionable_scene_cue():
     assert "**tavern:** A canal-side inn with a sagging floor and too many locked doors." in ctx
 
 
+def test_context_hides_dangling_location_connections_without_mutating_state():
+    state = _state()
+    state.locations["tavern"].connections = ["alley", "missing-dock"]
+    state.locations["alley"] = Location(id="alley")
+
+    ctx = character_context(state.characters["hero"], state)
+
+    assert "**where i can go from here:** alley" in ctx
+    assert "missing-dock" not in ctx
+    assert state.locations["tavern"].connections == ["alley", "missing-dock"]
+
+
+def test_context_shows_canonical_two_hop_routes_for_directions():
+    state = _state()
+    state.locations["tavern"].connections = ["bridge", "guild-hall"]
+    state.locations["bridge"] = Location(id="bridge", connections=["tavern", "forest-trail"])
+    state.locations["guild-hall"] = Location(id="guild-hall", connections=["tavern", "trade-dock"])
+    state.locations["forest-trail"] = Location(id="forest-trail", connections=["bridge"])
+    state.locations["trade-dock"] = Location(id="trade-dock", connections=["guild-hall"])
+
+    ctx = character_context(state.characters["hero"], state)
+
+    assert "## 🧭 nearby routes" in ctx
+    assert "via **bridge**: forest-trail" in ctx
+    assert "via **guild-hall**: trade-dock" in ctx
+
+
+def test_context_marks_an_adjacent_location_without_onward_exits_as_a_dead_end():
+    state = _state()
+    state.locations["tavern"].connections = ["alley"]
+    state.locations["alley"] = Location(id="alley", connections=["tavern"])
+
+    ctx = character_context(state.characters["hero"], state)
+
+    assert "via **alley**: dead end" in ctx
+
+
 def test_context_exposes_owned_quest_deadline_pressure():
     state = _state()
     state.quests["save-inn"] = Quest(

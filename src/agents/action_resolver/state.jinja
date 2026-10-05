@@ -39,6 +39,13 @@
 - place: unknown
 {% endif %}
 
+{% if known_characters %}
+## known character state
+{% for other in known_characters %}
+- {{ other.id }}{% if other.role %} ({{ other.role }}){% endif %}: {{ other.location }}
+{% endfor %}
+{% endif %}
+
 {% if target_character or target_location or target_item %}
 ## target resolution
 {% if target_character %}

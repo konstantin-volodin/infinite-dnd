@@ -2,7 +2,7 @@ import asyncio
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.exceptions import ModelAPIError, UsageLimitExceeded
 
 from src.engine.runtime.chronicle import (
     HISTORY_COMPACT_THRESHOLD,
@@ -83,6 +83,40 @@ def test_usage_limit_exceeded_falls_back_to_digest(monkeypatch):
 
     async def fake_run(*_args, **_kwargs):
         raise UsageLimitExceeded("too many requests")
+
+    monkeypatch.setattr("src.engine.runtime.chronicle.chronicler_agent.run", fake_run)
+    asyncio.run(compact_history(state, _Logger()))
+
+    archived = _events(HISTORY_COMPACT_THRESHOLD + 1 - HISTORY_KEEP_RECENT)
+    assert state.chronicle == [digest(archived)]
+    assert len(state.history) == HISTORY_KEEP_RECENT
+
+
+def test_provider_error_falls_back_to_digest(monkeypatch):
+    state = WorldState(history=_events(HISTORY_COMPACT_THRESHOLD + 1))
+
+    async def fake_run(*_args, **_kwargs):
+        raise ModelAPIError("anthropic", "Connection error")
+
+    monkeypatch.setattr("src.engine.runtime.chronicle.chronicler_agent.run", fake_run)
+    asyncio.run(compact_history(state, _Logger()))
+
+    archived = _events(HISTORY_COMPACT_THRESHOLD + 1 - HISTORY_KEEP_RECENT)
+    assert state.chronicle == [digest(archived)]
+    assert len(state.history) == HISTORY_KEEP_RECENT
+
+
+def test_blank_model_summary_falls_back_to_digest(monkeypatch):
+    state = WorldState(history=_events(HISTORY_COMPACT_THRESHOLD + 1))
+
+    async def fake_run(*_args, **_kwargs):
+        class _Result:
+            output = "  \n"
+
+            def all_messages(self):
+                return []
+
+        return _Result()
 
     monkeypatch.setattr("src.engine.runtime.chronicle.chronicler_agent.run", fake_run)
     asyncio.run(compact_history(state, _Logger()))

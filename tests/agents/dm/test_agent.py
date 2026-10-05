@@ -21,17 +21,31 @@ def test_dm_output_entities_filtered():
 
 def test_dm_output_quest_updates_filtered():
     updates = [
-        QuestUpdate(quest_id="find-brother", new_status="completed"),
-        QuestUpdate(quest_id="find-alan", step="discovered he works at the docks"),
-        QuestUpdate(quest_id="find-kaelen", advance=True),
+        QuestUpdate(
+            quest_id="find-brother",
+            new_status="completed",
+            step="found him alive",
+        ),
+        QuestUpdate(
+            quest_id="find-alan",
+            step="Ronny saw Kaelen heading to the docks to meet Alan",
+        ),
+        QuestUpdate(
+            quest_id="find-kaelen",
+            advance=True,
+            step="followed the river trail",
+        ),
         QuestUpdate(quest_id="noise"),  # empty — should be dropped
     ]
     result = dm_output(None, [], updates, [], [], [])  # type: ignore[arg-type]
-    assert len(result.modifies) == 3  # empty update filtered out
+    assert len(result.modifies) == 2  # empty and step-only updates are filtered out
     assert all(isinstance(t, Modify) for t in result.modifies)
-    assert result.modifies[0].target_id == "find-brother" and result.modifies[0].status == "completed" and result.modifies[0].step is None
-    assert result.modifies[1].target_id == "find-alan" and result.modifies[1].status is None and result.modifies[1].step == "discovered he works at the docks"
-    assert result.modifies[2].target_id == "find-kaelen" and result.modifies[2].advance is True
+    assert result.modifies[0].target_id == "find-brother"
+    assert result.modifies[0].status == "completed"
+    assert result.modifies[0].step == "found him alive"
+    assert result.modifies[1].target_id == "find-kaelen"
+    assert result.modifies[1].advance is True
+    assert result.modifies[1].step == "followed the river trail"
 
 
 def test_dm_output_relationship_updates_filtered():
