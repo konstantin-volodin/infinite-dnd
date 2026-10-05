@@ -6,56 +6,59 @@ The agent emits one per turn; the resolver consumes them and is the only writer.
 
 from typing import Literal, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
-class Speak(BaseModel):
+Ability = Literal["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+
+
+class CharacterToolBase(BaseModel):
+    """Shared optional fields every character tool carries — applied deterministically by the resolver."""
+    remember: str | None = None  # one concrete fact to store in my own knowledge
+    new_goal: str | None = None  # replacement for my own goal, when something changed it
+
+
+class Speak(CharacterToolBase):
     kind: Literal["speak"] = "speak"
     actor: str
     message: str
     target: str | None = None
 
 
-class Travel(BaseModel):
+class Travel(CharacterToolBase):
     kind: Literal["travel"] = "travel"
     actor: str
     destination: str
 
 
-class Wait(BaseModel):
+class Wait(CharacterToolBase):
     kind: Literal["wait"] = "wait"
     actor: str
 
 
-class Action(BaseModel):
+class Action(CharacterToolBase):
     kind: Literal["action"] = "action"
     actor: str
     description: str
     target: str | None = None
 
 
-CharacterTool = Union[Speak, Travel, Wait, Action]
+class Attack(CharacterToolBase):
+    kind: Literal["attack"] = "attack"
+    actor: str
+    target: str
 
 
-if __name__ == "__main__":
-    import logging
+class Check(CharacterToolBase):
+    """A risky action resolved with a d20 against a DC or another character."""
+    kind: Literal["check"] = "check"
+    actor: str
+    ability: Ability
+    description: str
+    difficulty: int = Field(default=10, ge=1, le=30)
+    modifier: int = Field(default=0, ge=-20, le=20)
+    opponent: str | None = None
+    opposing_modifier: int = Field(default=0, ge=-20, le=20)
 
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
-    s = Speak(actor="alice", message="hi", target="bob")
-    assert s.kind == "speak" and s.actor == "alice" and s.target == "bob"
-
-    t = Travel(actor="alice", destination="forest")
-    assert t.kind == "travel" and t.destination == "forest"
-
-    w = Wait(actor="alice")
-    assert w.kind == "wait"
-
-    a = Action(actor="alice", description="pick the lock")
-    assert a.kind == "action" and a.target is None
-
-    for tool in (s, t, w, a):
-        clone = type(tool).model_validate_json(tool.model_dump_json())
-        assert clone == tool
-
-    logging.info(f"{__file__} tests completed successfully.")
+CharacterTool = Union[Speak, Travel, Wait, Action, Attack, Check]

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "encroaching-dawn",
+    "name": "The Encroaching Dawn",
+    "goal": "End Mira's search before the Oak Circlet can break Vesna's curse",
+    "clocks": [
+      {
+        "id": "dawn-breaks",
+        "name": "Dawn breaks",
+        "progress": 0,
+        "segments": 6,
+        "consequence": "Dawn spills across Thorne Manor. Without the Oak Circlet, Great-aunt Vesna succumbs to the curse.",
+        "fail_quest_id": "find-the-circlet"
+      }
+    ]
+  }
+]

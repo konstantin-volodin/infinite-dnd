@@ -4,29 +4,37 @@ Data Models - Pydantic models for game state.
     - Location: id, description, connections, features, items.
     - Character: id, role, backstory, personality, goal, location, relationships, inventory, knowledge, stats.
     - HistoryEvent: text, location, characters involved.
-    - Quest: id, title, description, status, owner, steps.
-    - WorldState: time, locations, characters, quests, history.
+    - Quest: id, title, description, status, owner, plan, current_step, steps.
+    - WorldState: time, locations, characters, quests, history, chronicle.
 
-Each model has in-file tests to ensure correct instantiation and behavior.
+See tests/engine/state/test_models.py for coverage.
 """
 
-from typing import List, Dict
-from pydantic import BaseModel, Field
+from typing import Dict, List
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class CharacterStats(BaseModel):
-    hp: int = 5
-    max_hp: int = 5
-    level: int = 1
-    xp: int = 0
+    hp: int = Field(default=5, ge=0)
+    max_hp: int = Field(default=5, ge=0)
+    level: int = Field(default=1, ge=1)
+    xp: int = Field(default=0, ge=0)
+    gold: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def hp_does_not_exceed_maximum(self) -> "CharacterStats":
+        if self.hp > self.max_hp:
+            raise ValueError("hp cannot exceed max_hp")
+        return self
 
 
 class Location(BaseModel):
     id: str
     description: str = ""
-    connections: List[str] = []
-    features: List[str] = []
-    items: List[str] = []
+    connections: List[str] = Field(default_factory=list)
+    features: List[str] = Field(default_factory=list)
+    items: List[str] = Field(default_factory=list)
 
 
 class Character(BaseModel):
@@ -36,86 +44,85 @@ class Character(BaseModel):
     personality: str = "" 
     goal: str = ""
     location: str = ""
-    relationships: Dict[str, str] = {}
-    inventory: List[str] = []
-    knowledge: List[str] = []
+    relationships: Dict[str, str] = Field(default_factory=dict)
+    inventory: List[str] = Field(default_factory=list)
+    knowledge: List[str] = Field(default_factory=list)
     stats: CharacterStats = Field(default_factory=CharacterStats)
 
 
 class HistoryEvent(BaseModel):
     text: str
     location: str
-    characters: List[str] = []
-    minutes_elapsed: int = 0
+    characters: List[str] = Field(default_factory=list)
+    minutes_elapsed: int = Field(default=0, ge=0)
 
 
 class Quest(BaseModel):
     id: str
     title: str
-    description: str
-    status: str = "active" 
-    owner: str = "" 
-    steps: List[str] = []
+    description: str = ""
+    status: str = "active"
+    owner: str = ""
+    plan: List[str] = Field(default_factory=list)  # ordered, concrete objectives set at creation
+    current_step: int = Field(default=0, ge=0)  # index into plan of the current objective
+    steps: List[str] = Field(default_factory=list)  # progress log — accomplished objectives + notes
+
+
+class ProgressClock(BaseModel):
+    """A finite, deterministic countdown toward a faction consequence."""
+
+    id: str
+    name: str
+    consequence: str = Field(min_length=1)
+    progress: int = Field(default=0, ge=0)
+    segments: int = Field(ge=1)
+    consequence_triggered: bool = False
+    fail_quest_id: str | None = None
+
+    @model_validator(mode="after")
+    def progress_does_not_exceed_segments(self) -> "ProgressClock":
+        if self.progress > self.segments:
+            raise ValueError("progress cannot exceed segments")
+        if self.consequence_triggered and self.progress < self.segments:
+            raise ValueError("consequence cannot be triggered before clock completion")
+        return self
+
+
+class Faction(BaseModel):
+    """An off-screen actor pursuing a goal through one or more progress clocks."""
+
+    id: str
+    name: str
+    goal: str
+    clocks: List[ProgressClock] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def clock_ids_are_unique(self) -> "Faction":
+        clock_ids = [clock.id for clock in self.clocks]
+        if len(clock_ids) != len(set(clock_ids)):
+            raise ValueError("clock ids must be unique within a faction")
+        return self
 
 
 class WorldState(BaseModel):
-    time: int = 0
-    minutes_elapsed: int = 0
-    locations: Dict[str, Location] = {}
-    characters: Dict[str, Character] = {}
-    quests: Dict[str, Quest] = {}
-    history: List[HistoryEvent] = []
+    time: int = Field(default=0, ge=0)
+    minutes_elapsed: int = Field(default=0, ge=0)
+    last_quest_advance_time: int = Field(default=0, ge=0)  # tick of the most recent quest advancement — stall detection
+    director_interventions: Dict[str, int] = Field(default_factory=dict)  # quest id (or "world") → director beat count
+    locations: Dict[str, Location] = Field(default_factory=dict)
+    characters: Dict[str, Character] = Field(default_factory=dict)
+    quests: Dict[str, Quest] = Field(default_factory=dict)
+    factions: Dict[str, Faction] = Field(default_factory=dict)
+    history: List[HistoryEvent] = Field(default_factory=list)
+    chronicle: List[str] = Field(default_factory=list)  # compact era summaries of history archived by compaction
 
-
-if __name__ == "__main__":
-
-    import logging
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
-
-    stats = CharacterStats(hp=20, max_hp=20, level=3)
-    assert stats.hp == 20
-    assert stats.max_hp == 20
-    assert stats.level == 3
-    logging.info(f"CharacterStats test passed.")
-    logging.info(f"CharacterStats: {stats}")
-
-    loc = Location(id="forest-1", description="dark forest", connections=["village-1"], features=["cabin in the woods"], items=["sword"])
-    assert loc.id == "forest-1"
-    assert loc.connections == ["village-1"]
-    assert loc.features == ["cabin in the woods"]
-    assert loc.items == ["sword"]
-    logging.info(f"Location test passed.")
-    logging.info(f"Location: {loc}")
-    
-    char = Character(id="hero-1", role="warrior", inventory=["sword", "shield"], goal="slay the dragon", stats=stats)
-    assert char.id == "hero-1"
-    assert char.role == "warrior"
-    assert char.stats.hp == 20
-    assert char.inventory == ["sword", "shield"]
-    assert char.goal == "slay the dragon"
-    logging.info(f"Character test passed.")
-    logging.info(f"Character: {char}")
-    
-    quest = Quest(id="q1", title="Slay Dragon", description="defeat the dragon", owner=char.id)
-    assert quest.status == "active"
-    assert quest.owner == "hero-1"
-    assert quest.description == "defeat the dragon"
-    logging.info(f"Quest test passed.")
-    logging.info(f"Quest: {quest}")
-    
-    world = WorldState(
-        time=0,
-        locations={"forest-1": loc},
-        characters={"hero-1": char},
-        quests={"q1": quest},
-        history=[HistoryEvent(text="Hero enters the forest", location="forest-1", characters=["hero-1"])]
-    )
-    assert world.time == 0
-    assert world.locations == {"forest-1": loc}
-    assert world.characters == {"hero-1": char}
-    assert world.quests == {"q1": quest}
-    assert world.history == [HistoryEvent(text="Hero enters the forest", location="forest-1", characters=["hero-1"])]
-    logging.info("WorldState test passed.")
-    logging.info(f"WorldState: {world}")
-    
-    logging.info(f"{__file__} tests completed successfully.")
+    @model_validator(mode="after")
+    def faction_clock_quest_links_exist(self) -> "WorldState":
+        for faction in self.factions.values():
+            for clock in faction.clocks:
+                if clock.fail_quest_id and clock.fail_quest_id not in self.quests:
+                    raise ValueError(
+                        f"faction clock '{faction.id}/{clock.id}' links unknown quest "
+                        f"'{clock.fail_quest_id}'"
+                    )
+        return self

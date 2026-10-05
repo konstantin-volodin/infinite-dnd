@@ -1,0 +1,3 @@
+http://dnd.voxlab.home {
+	reverse_proxy app:8765
+}

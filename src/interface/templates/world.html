@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Infinite DnD World Dashboard</title>
+  <link rel="stylesheet" href="/static/world.css">
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand"><span class="brand-mark"></span>infinite-dnd</div>
+      <div class="topbar-main">
+        <label class="sr-only" for="run">Game run</label>
+        <select id="run" aria-label="Game run"></select>
+        <div class="tick-controls">
+          <button id="tick-prev" type="button" title="Previous tick" aria-label="Previous tick">‹</button>
+          <input type="range" id="tick-slider" min="0" max="0" value="0" aria-label="Story tick" aria-describedby="tick-label">
+          <button id="tick-next" type="button" title="Next tick" aria-label="Next tick">›</button>
+          <span class="tick-label" id="tick-label">tick –</span>
+        </div>
+        <button class="live-btn" id="live-btn" type="button" aria-pressed="true"><span class="dot" aria-hidden="true"></span>LIVE</button>
+        <div class="session-meta">
+          <div class="title" id="meta-title">Waiting for snapshots</div>
+          <div id="meta-sub"><span class="clock" id="meta-clock"></span> <span id="meta-quests"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bodygrid">
+      <div class="rail">
+        <h3 class="section">Map</h3>
+        <div class="map-wrap"><svg id="map-svg" viewBox="0 0 100 100" role="group" aria-label="World locations"></svg></div>
+        <div class="loc-detail" id="loc-detail"></div>
+      </div>
+
+      <div class="story">
+        <h3 class="section">Story <span class="count" id="story-count">0</span></h3>
+        <div class="story-body" id="story-body"><div class="feed" id="feed"></div></div>
+        <aside class="play-panel" id="play-panel" aria-label="Player action">
+          <strong class="sr-only" id="play-title" role="status" aria-live="polite">Waiting for your turn</strong>
+          <div class="play-alert" id="play-situation" role="status" aria-live="polite" hidden></div>
+          <div class="play-trail" id="play-trail" aria-live="polite" hidden>
+            <div class="trail-step action">
+              <span class="trail-label">Your move</span>
+              <span class="trail-text" id="play-last-action"></span>
+            </div>
+            <div class="trail-line" aria-hidden="true"></div>
+            <div class="trail-step pending" id="play-outcome-step">
+              <span class="trail-label">World response</span>
+              <span class="trail-text" id="play-last-outcome">Resolving…</span>
+            </div>
+          </div>
+          <form id="play-form">
+            <label class="sr-only" for="play-input">Your action</label>
+            <input id="play-input" autocomplete="off" placeholder="What do you do?" aria-describedby="play-help play-error" disabled>
+            <div class="play-actions">
+              <div class="play-suggestions" id="play-suggestions" role="group" aria-label="Suggested actions" hidden></div>
+              <button id="play-submit" type="submit" disabled>Act</button>
+            </div>
+          </form>
+          <div class="play-help" id="play-help">Player controls are disabled. Start Infinite DnD with <code>--web</code> to enable them.</div>
+          <div class="play-error" id="play-error" role="alert"></div>
+        </aside>
+      </div>
+
+      <div class="context">
+        <div class="char-panel">
+          <h3 class="section">Characters <span class="count" id="char-count"></span></h3>
+          <div class="char-grid" id="char-grid"></div>
+        </div>
+
+        <div class="side">
+          <h3 class="section">Quests <span class="count" id="quest-count">0</span></h3>
+          <div class="side-panel" id="panel-quests"><div id="quest-list"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="char-drawer" role="dialog" aria-modal="true" aria-labelledby="char-detail-title" aria-hidden="true"><div class="dialog" id="char-detail"></div></div>
+
+  <script src="/static/shared.js"></script>
+  <script src="/static/world.js"></script>
+</body>
+</html>

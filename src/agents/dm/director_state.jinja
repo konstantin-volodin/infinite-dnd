@@ -1,0 +1,64 @@
+{% if chronicle %}
+## chronicle (long-term memory, oldest first)
+{% for entry in chronicle %}
+- {{ entry }}
+{% endfor %}
+{% endif %}
+## recent events
+{% if recent_events %}
+{% for event in recent_events %}
+- {{ event }}
+{% endfor %}
+{% else %}
+_no prior events._
+{% endif %}
+
+## 🗺️ active quests
+{% for q in quests %}
+- **{{ q.id }}** — {{ q.title }} _(status: {{ q.status }})_
+  - {{ q.description }}
+  - owner: {{ q.owner }}
+{% if q.plan %}
+  - plan:
+{% for step in q.plan %}
+    {{ '→ current: ' if loop.index0 == q.current_step else ('- done: ' if loop.index0 < q.current_step else '- ') }}{{ step }}
+{% endfor %}
+{% endif %}
+{% if interventions.get(q.id) %}
+  - this is intervention #{{ interventions[q.id] + 1 }} on this thread — escalate stakes on the existing thread rather than introducing a new sidetrack.
+{% endif %}
+{% endfor %}
+{% if interventions.get('world') %}
+- untargeted interventions so far: {{ interventions['world'] }} — prefer tying this one to a quest above.
+{% endif %}
+
+{% if factions %}
+## 🕰️ faction agendas (off-screen — good sources of pressure)
+{% for f in factions %}
+- **{{ f.name }}**: {{ f.goal }}
+{% for clock in f.clocks %}
+  - {{ clock.name }}: {{ 'already happened — ' ~ clock.consequence if clock.consequence_triggered else clock.progress ~ '/' ~ clock.segments ~ ' toward: ' ~ clock.consequence }}
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+## 🎬 scene
+- location: {{ location_id }}
+{% if scene %}
+- description: {{ scene.description or 'no description' }}
+- features: {{ scene.features | join(', ') if scene.features else 'none' }}
+- items: {{ scene.items | join(', ') if scene.items else 'none' }}
+- exits: {{ scene.connections | join(', ') if scene.connections else 'none' }}
+{% endif %}
+{% if present %}
+- people here:
+{% for character in present %}
+  - **{{ character.id }}**{% if character.role %} ({{ character.role }}){% endif %}: {{ character.stats.hp }}/{{ character.stats.max_hp }} HP; wants {{ character.goal or 'nothing specific' }}
+{% endfor %}
+{% else %}
+- people here: no one
+{% endif %}
+
+---
+
+Call `report` with exactly one complication grounded in the state above. Use a concrete scene detail or present character's motivation when possible, and leave the characters more than one plausible way to respond.

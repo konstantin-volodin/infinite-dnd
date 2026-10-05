@@ -4,6 +4,12 @@
     "title": "The Oak Circlet",
     "description": "Recover the Thorne family's Oak Circlet before dawn. Great-aunt Vesna's life depends on it.",
     "owner": "mira-thorne",
-    "status": "active"
+    "status": "active",
+    "plan": [
+      "search the upper-library for clues about the circlet's whereabouts",
+      "question the servants about the circlet",
+      "search the manor-foyer and family portraits for hidden clues",
+      "recover the Oak Circlet before dawn"
+    ]
   }
 ]

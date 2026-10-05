@@ -3,7 +3,7 @@
     "id": "elara-swift",
     "location": "valley-bridge",
     "role": "former-guard",
-    "stats": {"hp": 20, "max_hp": 20},
+    "stats": {"hp": 20, "max_hp": 20, "gold": 15},
     "backstory": "I was a royal guard once. I left when my brother disappeared - finding him matters more than any oath.",
     "personality": "When I decide to act, I don't stop until it's done. I'd rather solve a problem than fight my way through it. Stray animals trust me - maybe because I know what it's like to be lost.",
     "goal": "Find my brother. He vanished near the river three weeks ago. Someone in this market knows something.",
@@ -13,7 +13,7 @@
   },
   {
     "id": "ronny-spice",
-    "stats": {"hp": 5, "max_hp": 5},
+    "stats": {"hp": 5, "max_hp": 5, "gold": 30},
     "role": "merchant",
     "location": "market-square",
     "backstory": "I've been selling spices in this market for thirty years. I know everyone, and everyone knows me. What they don't know is that I fund a small crew that rescues people from the Raiders.",

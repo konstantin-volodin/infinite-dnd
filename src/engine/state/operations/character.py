@@ -1,8 +1,13 @@
 """
-Character-scoped operations: movement, dialogue, items, stats, relationships, knowledge.
+Character-scoped operations: movement, dialogue, items, stats, relationships, knowledge, combat.
 """
 
+import random
+
+from src.engine.rules import attack_damage, kill_xp
 from src.engine.state.operations._base import _OpsBase
+
+_XP_PER_LEVEL = 100
 
 
 class CharacterOps(_OpsBase):
@@ -60,36 +65,45 @@ class CharacterOps(_OpsBase):
         self._log(result, char.location, [character_id])
         return result
 
-    def give_item(self, from_character_id: str, to_character_id: str, item: str) -> str:
-        giver = self.state.characters.get(from_character_id)
-        if not giver: return f"Cannot give item — character '{from_character_id}' not found."
+    def trade_item(self, buyer_id: str, seller_id: str, item: str, price: int) -> str:
+        buyer = self.state.characters.get(buyer_id)
+        if not buyer: return f"Cannot trade — character '{buyer_id}' not found."
 
-        receiver = self.state.characters.get(to_character_id)
-        if not receiver: return f"Cannot give item — character '{to_character_id}' not found."
-        if giver.location != receiver.location: return f"Cannot give item — '{from_character_id}' and '{to_character_id}' are not in the same location."
-        if receiver.stats.hp <= 0: return f"Cannot give item — '{to_character_id}' is dead."
-        if item not in giver.inventory: return f"Cannot give '{item}' — {from_character_id} doesn't have it."
+        seller = self.state.characters.get(seller_id)
+        if not seller: return f"Cannot trade — character '{seller_id}' not found."
+        if buyer.location != seller.location: return f"Cannot trade — '{buyer_id}' and '{seller_id}' are not in the same location."
+        if item not in seller.inventory: return f"Cannot trade — '{seller_id}' doesn't have '{item}'."
+        price = max(0, price)
+        if buyer.stats.gold < price: return f"Cannot trade — '{buyer_id}' doesn't have enough gold ({buyer.stats.gold} < {price})."
 
-        giver.inventory.remove(item)
-        receiver.inventory.append(item)
-        result = f"{from_character_id} gives '{item}' to {to_character_id}."
-        self._log(result, giver.location, [from_character_id, to_character_id])
+        seller.inventory.remove(item)
+        buyer.inventory.append(item)
+        buyer.stats.gold -= price
+        seller.stats.gold += price
+        result = f"{buyer_id} buys '{item}' from {seller_id} for {price} gold."
+        self._log(result, buyer.location, [buyer_id, seller_id])
         return result
 
-    def loot_item(self, character_id: str, target_id: str, item: str) -> str:
-        char = self.state.characters.get(character_id)
-        if not char: return f"Cannot loot — character '{character_id}' not found."
+    # ============ COMBAT ============
+    def attack(self, attacker_id: str, target_id: str, rng: random.Random | None = None) -> str:
+        attacker = self.state.characters.get(attacker_id)
+        if not attacker: return f"Cannot attack — character '{attacker_id}' not found."
 
         target = self.state.characters.get(target_id)
-        if not target: return f"Cannot loot — character '{target_id}' not found."
-        if char.location != target.location: return f"Cannot loot — '{character_id}' and '{target_id}' are not in the same location."
-        if target.stats.hp > 0: return f"Cannot loot '{target_id}' — they are still alive."
-        if item not in target.inventory: return f"Cannot loot '{item}' — {target_id} doesn't have it."
+        if not target: return f"Cannot attack — character '{target_id}' not found."
+        if attacker_id == target_id: return f"Cannot attack — '{attacker_id}' can't attack themselves."
+        if attacker.location != target.location: return f"Cannot attack — '{attacker_id}' and '{target_id}' are not in the same location."
+        if attacker.stats.hp <= 0: return f"Cannot attack — '{attacker_id}' is dead."
+        if target.stats.hp <= 0: return f"Cannot attack — '{target_id}' is already dead."
 
-        target.inventory.remove(item)
-        char.inventory.append(item)
-        result = f"{character_id} loots '{item}' from {target_id}."
-        self._log(result, char.location, [character_id, target_id])
+        dmg = attack_damage(attacker, rng)
+        target.stats.hp = max(0, target.stats.hp - dmg)
+        result = f"{attacker_id} attacks {target_id} for {dmg} damage. {target_id} HP: {target.stats.hp}/{target.stats.max_hp}."
+        self._log(result, attacker.location, [attacker_id, target_id])
+
+        if target.stats.hp == 0:
+            self._log(f"{target_id} falls dead.", attacker.location, [attacker_id, target_id])
+            result += " " + self.award_xp(attacker_id, kill_xp(target), reason=f"defeating {target_id}")
         return result
 
     # ============ STATS ============
@@ -97,6 +111,7 @@ class CharacterOps(_OpsBase):
         char = self.state.characters.get(character_id)
         if not char: return f"Cannot damage — character '{character_id}' not found."
 
+        amount = max(0, amount)
         char.stats.hp = max(0, char.stats.hp - amount)
         result = f"{character_id} takes {amount} damage. HP: {char.stats.hp}/{char.stats.max_hp}."
         self._log(result, char.location, [character_id])
@@ -106,6 +121,7 @@ class CharacterOps(_OpsBase):
         char = self.state.characters.get(character_id)
         if not char: return f"Cannot heal — character '{character_id}' not found."
 
+        amount = max(0, amount)
         char.stats.hp = min(char.stats.max_hp, char.stats.hp + amount)
         result = f"{character_id} heals {amount} HP. HP: {char.stats.hp}/{char.stats.max_hp}."
         self._log(result, char.location, [character_id])
@@ -131,18 +147,41 @@ class CharacterOps(_OpsBase):
         suffix = f" ({reason})" if reason else ""
         result = f"{character_id} earns {amount} XP{suffix}."
         self._log(result, char.location, [character_id])
+
+        while char.stats.xp >= char.stats.level * _XP_PER_LEVEL:
+            result += " " + self.level_up(character_id)
+        return result
+
+    def give_gold(self, from_character_id: str, to_character_id: str, amount: int) -> str:
+        giver = self.state.characters.get(from_character_id)
+        if not giver: return f"Cannot give gold — character '{from_character_id}' not found."
+
+        receiver = self.state.characters.get(to_character_id)
+        if not receiver: return f"Cannot give gold — character '{to_character_id}' not found."
+        amount = max(0, amount)
+        if giver.stats.gold < amount: return f"Cannot give gold — '{from_character_id}' only has {giver.stats.gold}."
+
+        giver.stats.gold -= amount
+        receiver.stats.gold += amount
+        result = f"{from_character_id} gives {amount} gold to {to_character_id}."
+        self._log(result, giver.location, [from_character_id, to_character_id])
         return result
 
     # ============ CHARACTER UPDATE ============
-    def update_character(self, character_id: str, backstory: str | None = None, personality: str | None = None, goal: str | None = None, role: str | None = None) -> str:
+    def set_goal(self, character_id: str, new_goal: str) -> str:
+        """replace a character's own goal — logged as a private event (visible only to them)."""
         char = self.state.characters.get(character_id)
-        if not char: return f"Cannot update — character '{character_id}' not found."
+        if not char: return f"Cannot set goal — character '{character_id}' not found."
 
-        if backstory is not None: char.backstory = backstory
-        if personality is not None: char.personality = personality
-        if goal is not None: char.goal = goal
-        if role is not None: char.role = role
-        return f"{character_id} updated."
+        new_goal = " ".join(new_goal.split())
+        current_goal = " ".join(char.goal.split())
+        if new_goal.casefold() == current_goal.casefold():
+            return f"{character_id}'s goal is unchanged."
+
+        char.goal = new_goal
+        result = f"{character_id}'s goal is now: {new_goal}"
+        self._log(result, char.location, [character_id])
+        return result
 
     # ============ RELATIONSHIPS ============
     def update_relationship(self, character_id: str, target_id: str, relation: str) -> str:
@@ -152,14 +191,6 @@ class CharacterOps(_OpsBase):
 
         char.relationships[target_id] = relation
         return f"{character_id}'s relationship with {target_id} is now '{relation}'."
-
-    def remove_relationship(self, character_id: str, target_id: str) -> str:
-        char = self.state.characters.get(character_id)
-        if not char: return f"Cannot remove relationship — character '{character_id}' not found."
-        if target_id not in char.relationships: return f"{character_id} has no relationship with '{target_id}'."
-
-        del char.relationships[target_id]
-        return f"{character_id}'s relationship with {target_id} removed."
 
     # ============ KNOWLEDGE ============
     def add_knowledge(self, character_id: str, fact: str) -> str:
@@ -171,108 +202,3 @@ class CharacterOps(_OpsBase):
         result = f"{character_id} learns: {fact}"
         self._log(result, char.location, [character_id])
         return result
-
-
-if __name__ == "__main__":
-
-    import logging
-    from src.engine.state.models import WorldState, Location, Character, CharacterStats
-
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
-
-    state = WorldState(
-        locations={
-            "tavern": Location(id="tavern", connections=["forest"], items=["ale"]),
-            "forest": Location(id="forest", connections=["tavern", "cave"]),
-            "cave": Location(id="cave", connections=["forest"]),
-        },
-        characters={
-            "hero": Character(id="hero", role="warrior", location="tavern", inventory=["sword"], stats=CharacterStats(hp=20, max_hp=20, level=1)),
-            "merchant": Character(id="merchant", role="shopkeeper", location="tavern", inventory=["potion", "shield"]),
-        },
-    )
-    ops = CharacterOps(state)
-
-    # movement
-    ops.move_character("hero", "forest")
-    assert state.characters["hero"].location == "forest"
-    ops.move_character("hero", "cave")
-    assert state.characters["hero"].location == "cave"
-    assert "Cannot reach" in ops.move_character("hero", "tavern")  # cave only connects to forest
-    logging.info("Movement tests passed.")
-
-    # take / drop
-    ops.move_character("hero", "forest")
-    ops.move_character("hero", "tavern")
-    ops.take_item("hero", "ale")
-    assert "ale" in state.characters["hero"].inventory
-    assert "ale" not in state.locations["tavern"].items
-    ops.drop_item("hero", "ale")
-    assert "ale" not in state.characters["hero"].inventory
-    assert "ale" in state.locations["tavern"].items
-    logging.info("Take/drop tests passed.")
-
-    # give / loot
-    ops.give_item("merchant", "hero", "potion")
-    assert "potion" in state.characters["hero"].inventory
-    ops.damage("merchant", 100)
-    assert state.characters["merchant"].stats.hp == 0
-    ops.loot_item("hero", "merchant", "shield")
-    assert "shield" in state.characters["hero"].inventory
-    assert "Cannot give" in ops.give_item("hero", "merchant", "potion")  # dead
-    ops.heal("merchant", 100)
-    assert "Cannot loot" in ops.loot_item("hero", "merchant", "shield")  # alive
-    logging.info("Give/loot tests passed.")
-
-    # damage / heal / level_up
-    ops.damage("hero", 8)
-    assert state.characters["hero"].stats.hp == 12
-    ops.heal("hero", 3)
-    assert state.characters["hero"].stats.hp == 15
-    ops.damage("hero", 100)
-    assert state.characters["hero"].stats.hp == 0
-    ops.heal("hero", 100)
-    assert state.characters["hero"].stats.hp == 20
-    ops.level_up("hero")
-    assert state.characters["hero"].stats.level == 2
-    assert state.characters["hero"].stats.max_hp == 25
-    assert state.characters["hero"].stats.hp == 25
-
-    # award_xp
-    history_before_xp = len(state.history)
-    ops.award_xp("hero", 25, reason="slaying goblins")
-    assert state.characters["hero"].stats.xp == 25
-    assert state.history[-1].text == "hero earns 25 XP (slaying goblins)."
-    ops.award_xp("hero", -10)  # clamped to 0, still logs
-    assert state.characters["hero"].stats.xp == 25
-    assert state.history[-1].text == "hero earns 0 XP."
-    assert len(state.history) == history_before_xp + 2
-    assert "Cannot award XP" in ops.award_xp("ghost", 10)
-    logging.info("Stats tests passed.")
-
-    # update character
-    ops.update_character("hero", goal="find the artifact", personality="brooding")
-    assert state.characters["hero"].goal == "find the artifact"
-    assert state.characters["hero"].personality == "brooding"
-    assert "Cannot update" in ops.update_character("ghost", goal="haunt")
-    logging.info("Update character tests passed.")
-
-    # relationships
-    ops.update_relationship("hero", "merchant", "friendly")
-    assert state.characters["hero"].relationships["merchant"] == "friendly"
-    ops.remove_relationship("hero", "merchant")
-    assert "merchant" not in state.characters["hero"].relationships
-    logging.info("Relationship tests passed.")
-
-    # knowledge
-    history_before = len(state.history)
-    ops.add_knowledge("hero", "The cave has a hidden passage")
-    assert "The cave has a hidden passage" in state.characters["hero"].knowledge
-    assert state.history[-1].text == "hero learns: The cave has a hidden passage"
-    assert len(state.history) == history_before + 1
-    ops.add_knowledge("hero", "The cave has a hidden passage")  # idempotent — no new event
-    assert state.characters["hero"].knowledge.count("The cave has a hidden passage") == 1
-    assert len(state.history) == history_before + 1
-    logging.info("Knowledge tests passed.")
-
-    logging.info(f"{__file__} tests completed successfully.")

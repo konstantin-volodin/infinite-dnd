@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Infinite DnD Log Viewer</title>
+  <link rel="stylesheet" href="/static/logs.css">
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand"><span class="brand-mark"></span>infinite-dnd</div>
+      <div class="topbar-main">
+        <label class="search" for="search"><span aria-hidden="true">🔍</span><span class="sr-only">Search logs</span> <input id="search" type="search" placeholder="Search logs..."></label>
+        <div class="seg" id="detail-seg" role="group" aria-label="Log detail level">
+          <button type="button" data-detail="story" class="active" aria-pressed="true">Story</button>
+          <button type="button" data-detail="runs" aria-pressed="false">Runs</button>
+          <button type="button" data-detail="all" aria-pressed="false">All</button>
+        </div>
+        <div class="session-meta">
+          <div class="title" id="session-title">Waiting for logs</div>
+          <div id="session-sub"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bodygrid">
+      <nav class="rail" aria-label="Log filters">
+        <h3>Sessions</h3>
+        <div id="file-list"></div>
+        <div class="rail-divider"></div>
+        <h3>Events</h3>
+        <div id="event-list"></div>
+        <div class="rail-divider"></div>
+        <h3>Agents</h3>
+        <div id="label-list"></div>
+      </nav>
+
+      <main class="log-panel" id="log-panel" aria-label="Log events"></main>
+      <aside class="inspector" id="inspector" aria-label="Event details"></aside>
+    </div>
+  </div>
+
+  <script src="/static/shared.js"></script>
+  <script src="/static/logs.js"></script>
+</body>
+</html>

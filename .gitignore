@@ -10,6 +10,8 @@ __pycache__/
 coverage/
 *_old.py
 .pytest_cache/
+.pytest-tmp*/
+/tmp/pytest-*/
 
 # Production
 build/

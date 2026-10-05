@@ -1,6 +1,6 @@
-"""Run the log viewer with `python -m src.interface`."""
+"""Run the infinite-dnd app with `python -m src.interface`."""
 
-from src.interface.viewer import main
+from src.interface.app import main
 
 
 if __name__ == "__main__":

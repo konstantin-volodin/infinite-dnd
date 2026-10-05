@@ -2,14 +2,14 @@
   {
     "id": "harbor-dock",
     "description": "Salt-bleached planks creak underfoot. Ropes coil like sleeping snakes. Gulls fight over fish heads at the tideline.",
-    "connections": ["fish-market", "lighthouse-base"],
+    "connections": ["fish-market", "lighthouse-base", "smugglers-cave"],
     "features": ["mooring posts", "Brenna's skiff", "stack of crab pots"],
     "items": ["smuggler crate"]
   },
   {
     "id": "fish-market",
     "description": "Stalls under sailcloth awnings. The smell hits before the sight does. Coin clinks under bartering voices.",
-    "connections": ["harbor-dock"],
+    "connections": ["harbor-dock", "village-square"],
     "features": ["gutting tables", "ice barrels", "harbormaster's notice board"]
   },
   {
@@ -17,5 +17,25 @@
     "description": "A squat stone tower at the cove's western horn. The lamp above turns slowly, even in daylight. The door at the base is iron-bound.",
     "connections": ["harbor-dock"],
     "features": ["iron-bound door", "gull-streaked walls", "old keph's stool"]
+  },
+  {
+    "id": "smugglers-cave",
+    "description": "A slit in the cliff face, hidden behind a curtain of kelp and broken rock. The air tastes of brine and tar. Crates are stacked deeper than the tide should reach.",
+    "connections": ["harbor-dock", "black-hulled-sloop"],
+    "features": ["stacked contraband crates", "a half-burned lantern", "boot prints in the wet sand"],
+    "items": ["coil of black rope"]
+  },
+  {
+    "id": "village-square",
+    "description": "Thatched roofs lean toward a well at the center. Laundry lines crisscross overhead. Everyone here knows everyone's business, or thinks they do.",
+    "connections": ["fish-market"],
+    "features": ["the village well", "a notice post thick with old bills", "smoke from the bakehouse chimney"]
+  },
+  {
+    "id": "black-hulled-sloop",
+    "description": "A narrow ship rides low in a hidden inlet, her hull painted the black of a moonless tide. No flag flies from the mast. Ropes creak against a silence that feels deliberate.",
+    "connections": ["smugglers-cave"],
+    "features": ["coiled boarding nets", "a scraped-off name on the transom", "a single lantern swinging below deck"],
+    "items": ["Teal Moon ship's log"]
   }
 ]

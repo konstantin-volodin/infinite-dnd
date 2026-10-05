@@ -1,6 +1,6 @@
 """Character prompt builders - system prompt and context."""
 
-from src.engine.state import Character, WorldState, characters_in_location
+from src.engine.state import Character, WorldState, characters_in_location, is_dialogue, quest_deadline_clocks
 from src.engine.rules import get_health_status
 from src.agents.utils import render
 
@@ -19,10 +19,12 @@ def character_context(char: Character, state: WorldState) -> str:
     knowledge = char.knowledge[-5:] if char.knowledge else []
 
     # relevant quests
-    quests = []
-    for q in state.quests.values():
-        if str(getattr(q, "status", "active")).lower() in ("completed", "failed"): continue
-        if q.owner == char.id: quests.append(q)
+    quests = [
+        q for q in state.quests.values()
+        if q.owner == char.id and q.status.lower() not in ("completed", "failed")
+    ]
+    quest_ids = {quest.id for quest in quests}
+    deadlines = [(faction.name, clock) for faction, clock in quest_deadline_clocks(state, quest_ids)]
 
     # Recent events (only ones this character witnessed)
     recent_events = [
@@ -34,17 +36,21 @@ def character_context(char: Character, state: WorldState) -> str:
     someone_speaking_to_me = False
     if recent_events:
         last = recent_events[-1]
-        is_dialogue = '"' in last or "says" in last.lower()
-        is_someone_else = not last.startswith(char.id)
-        someone_speaking_to_me = is_dialogue and is_someone_else
+        someone_speaking_to_me = is_dialogue(last) and not last.startswith(char.id)
 
-    # Others present
+    # Others present, with visible condition (role, health if not healthy)
     present_characters = characters_in_location(state, char.location, exclude_character_id=char.id)
-    others = [f"{c.id} ({c.role})" if c.role else c.id for c in present_characters]
-    speak_targets = [c.id for c in present_characters]
+    others = []
+    for c in present_characters:
+        status = get_health_status(c)
+        tags = [t for t in (c.role, status if status != "healthy" else "") if t]
+        if disposition := c.relationships.get(char.id):
+            tags.append(f"thinks of me: {disposition}")
+        others.append(f"{c.id} ({', '.join(tags)})" if tags else c.id)
+    speak_targets = [c.id for c in present_characters if c.stats.hp > 0]
     # Warnings
     warnings: list[str] = []
-    if sum(1 for e in recent_events[-5:] if '"' in e or "says" in e.lower()) >= 4:
+    if sum(1 for e in recent_events[-5:] if is_dialogue(e)) >= 4:
         warnings.append("*Lots of talking. Maybe time for action.*")
 
     return render(
@@ -53,10 +59,12 @@ def character_context(char: Character, state: WorldState) -> str:
         health_status=health_status,
         loc=loc,
         knowledge=knowledge,
+        chronicle=state.chronicle[-3:],
         recent_events=recent_events,
         someone_speaking_to_me=someone_speaking_to_me,
         others=others,
         speak_targets=speak_targets,
         quests=quests,
+        deadlines=deadlines,
         warnings=warnings,
     )

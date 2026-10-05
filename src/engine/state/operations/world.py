@@ -2,47 +2,83 @@
 World-scoped operations: quests, characters (spawn/delete), items (world-level), locations, time.
 """
 
+from typing import Protocol, cast
+
 from src.engine.state.models import Character, Location, Quest
 from src.engine.state.operations._base import _OpsBase
 
 
+class _XpAwarder(Protocol):
+    def award_xp(self, character_id: str, amount: int, reason: str = "") -> str: ...
+
+
+_TERMINAL_QUEST_STATUSES = {"completed", "failed"}
+
+
 class WorldOps(_OpsBase):
     # ============ QUESTS ============
-    def advance_quest(self, quest_id: str, new_status: str | None = None, step: str | None = None) -> str:
+    def advance_quest(self, quest_id: str, new_status: str | None = None, step: str | None = None, advance: bool = False) -> str:
         quest = self.state.quests.get(quest_id)
         if not quest: return f"Cannot advance quest — '{quest_id}' not found."
+        if quest.status.lower() in _TERMINAL_QUEST_STATUSES:
+            return f"Cannot advance quest — '{quest_id}' is already {quest.status.lower()}."
+        normalized_status = new_status.strip().casefold() if new_status is not None else None
+        if advance and quest.plan and quest.current_step >= len(quest.plan):
+            return f"Cannot advance quest — '{quest_id}' has no remaining objectives."
 
-        if new_status: quest.status = new_status
-        if step: quest.steps.append(step)
+        # A planned quest can only complete by advancing its final objective.
+        # DM status updates alone may reflect a lead or a discovered location,
+        # neither of which is evidence that the resolution objective was met.
+        completing_final_objective = advance and quest.current_step == len(quest.plan) - 1
+        if normalized_status == "completed" and quest.plan and not completing_final_objective:
+            return f"Cannot complete quest — '{quest_id}' has not achieved its final objective."
 
-        # XP award to owner — step=10, completion=50. Silent if owner isn't a known character.
+        # `advance` accomplishes the CURRENT plan objective: log it, move the pointer, maybe auto-complete.
+        # `step` alone (no advance) is a plain log note — used alongside explicit new_status.
+        awarded_step = False
+        if advance:
+            objective = quest.plan[quest.current_step] if quest.current_step < len(quest.plan) else None
+            note = f"{objective} — {step}" if objective and step else (objective or step or "objective accomplished")
+            quest.steps.append(note)
+            quest.current_step += 1
+            awarded_step = True
+            if quest.plan and quest.current_step >= len(quest.plan) and not normalized_status:
+                normalized_status = "completed"
+        elif step:
+            quest.steps.append(step)
+
+        if normalized_status: quest.status = normalized_status
+        if advance or normalized_status: self.state.last_quest_advance_time = self.state.time  # stall detection
+
+        # XP award to owner — step/advance=10, completion=50. Silent if owner isn't a known character.
         award_suffix = ""
         if quest.owner and quest.owner in self.state.characters:
-            if step:
-                self.award_xp(quest.owner, 10, reason=f"quest '{quest_id}' progress")
+            award_xp = cast(_XpAwarder, self).award_xp
+            if awarded_step:
+                award_xp(quest.owner, 10, reason=f"quest '{quest_id}' progress")
                 award_suffix = f" (+10 XP to {quest.owner})"
-            if new_status == "completed":
-                self.award_xp(quest.owner, 50, reason=f"quest '{quest_id}' completed")
+            if normalized_status == "completed":
+                award_xp(quest.owner, 50, reason=f"quest '{quest_id}' completed")
                 award_suffix = f" (+50 XP to {quest.owner})"
         return f"Quest '{quest_id}' updated.{award_suffix}"
 
-    def add_quest(self, quest_id: str, title: str, description: str = "", owner: str | None = None) -> str:
+    def add_quest(self, quest_id: str, title: str, description: str = "", owner: str | None = None, plan: list[str] | None = None) -> str:
         if quest_id in self.state.quests: return f"Quest '{quest_id}' already exists."
 
         owner_id = owner or ""
-        self.state.quests[quest_id] = Quest(id=quest_id, title=title, description=description, owner=owner_id)
+        self.state.quests[quest_id] = Quest(id=quest_id, title=title, description=description, owner=owner_id, plan=plan or [])
         owner_loc = self.state.characters[owner_id].location if owner_id in self.state.characters else ""
         self._log(f"New quest: '{title}'" + (f" (owner: {owner_id})" if owner_id else ""), owner_loc, [owner_id] if owner_id else None)
         return f"Quest '{quest_id}' added."
 
     # ============ CHARACTERS ============
-    def spawn_npc(self, npc_id: str, role: str, location_id: str, backstory: str = "", goal: str = "") -> str:
-        if npc_id in self.state.characters: return f"Cannot spawn '{npc_id}' — character already exists."
-        if location_id not in self.state.locations: return f"Cannot spawn '{npc_id}' — location '{location_id}' not found."
+    def spawn_character(self, character_id: str, role: str, location_id: str, backstory: str = "", goal: str = "", personality: str = "") -> str:
+        if character_id in self.state.characters: return f"Cannot spawn '{character_id}' — character already exists."
+        if location_id not in self.state.locations: return f"Cannot spawn '{character_id}' — location '{location_id}' not found."
 
-        self.state.characters[npc_id] = Character(id=npc_id, role=role, location=location_id, backstory=backstory, goal=goal)
-        result = f"{npc_id} appears at '{location_id}'."
-        self._log(result, location_id, [npc_id])
+        self.state.characters[character_id] = Character(id=character_id, role=role, location=location_id, backstory=backstory, goal=goal, personality=personality)
+        result = f"{character_id} appears at '{location_id}'."
+        self._log(result, location_id, [character_id])
         return result
 
     def delete_npc(self, npc_id: str, reason: str = "") -> str:
@@ -88,144 +124,9 @@ class WorldOps(_OpsBase):
         if remove_feature and remove_feature in loc.features: loc.features.remove(remove_feature)
         return f"Location '{location_id}' updated."
 
-    def connect_locations(self, location_a: str, location_b: str) -> str:
-        if location_a not in self.state.locations: return f"Cannot connect — location '{location_a}' not found."
-        if location_b not in self.state.locations: return f"Cannot connect — location '{location_b}' not found."
-
-        loc_a, loc_b = self.state.locations[location_a], self.state.locations[location_b]
-        if location_b in loc_a.connections: return f"'{location_a}' and '{location_b}' are already connected."
-
-        loc_a.connections.append(location_b)
-        loc_b.connections.append(location_a)
-        return f"'{location_a}' and '{location_b}' connected."
-
-    def disconnect_locations(self, location_a: str, location_b: str) -> str:
-        if location_a not in self.state.locations: return f"Cannot disconnect — location '{location_a}' not found."
-        if location_b not in self.state.locations: return f"Cannot disconnect — location '{location_b}' not found."
-
-        loc_a, loc_b = self.state.locations[location_a], self.state.locations[location_b]
-        if location_b not in loc_a.connections: return f"'{location_a}' and '{location_b}' are not connected."
-
-        loc_a.connections.remove(location_b)
-        loc_b.connections.remove(location_a)
-        return f"'{location_a}' and '{location_b}' disconnected."
-
-    def remove_location(self, location_id: str) -> str:
-        if location_id not in self.state.locations: return f"Cannot remove — location '{location_id}' not found."
-
-        for loc in self.state.locations.values():
-            if location_id in loc.connections:
-                loc.connections.remove(location_id)
-
-        del self.state.locations[location_id]
-        return f"Location '{location_id}' removed."
-
-    # ============ TIME ============
-    def tick_time(self, event_text: str, location: str, characters: list[str] | None = None) -> str:
-        self.state.time += 1
-        self._log(event_text, location, characters)
-        return f"Time advanced to {self.state.time}. Event logged: {event_text}"
-
-
-if __name__ == "__main__":
-
-    import logging
-    from src.engine.state.models import WorldState, Location, Quest, Character
-    from src.engine.state.operations import WorldOperations
-
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
-
-    state = WorldState(
-        locations={
-            "tavern": Location(id="tavern", connections=["forest"]),
-            "forest": Location(id="forest", connections=["tavern"]),
-        },
-        characters={
-            "hero": Character(id="hero", role="warrior", location="tavern"),
-        },
-        quests={
-            "q1": Quest(id="q1", title="Clear the Cave", description="Defeat the creatures", owner="hero"),
-            "q2": Quest(id="q2", title="Ownerless Task", description="no owner", owner=""),
-        },
-    )
-    ops = WorldOperations(state)
-
-    # quests — step/completion award XP to owner; return string reflects award
-    msg = ops.advance_quest("q1", step="Entered the cave")
-    assert "Entered the cave" in state.quests["q1"].steps
-    assert state.characters["hero"].stats.xp == 10
-    assert "+10 XP to hero" in msg
-    msg = ops.advance_quest("q1", new_status="completed")
-    assert state.quests["q1"].status == "completed"
-    assert state.characters["hero"].stats.xp == 60
-    assert "+50 XP to hero" in msg
-    # ownerless quest: no XP, no suffix
-    msg = ops.advance_quest("q2", new_status="completed")
-    assert state.quests["q2"].status == "completed"
-    assert msg == "Quest 'q2' updated."
-
-    # add_quest — anchored to owner's location when known
-    history_before_add = len(state.history)
-    msg = ops.add_quest("q3", title="Find the Map", description="locate the buried chart", owner="hero")
-    assert msg == "Quest 'q3' added."
-    assert "q3" in state.quests and state.quests["q3"].owner == "hero"
-    assert state.history[-1].location == "tavern"
-    assert "owner: hero" in state.history[-1].text
-    # idempotent
-    assert "already exists" in ops.add_quest("q3", title="Find the Map")
-    assert len(state.history) == history_before_add + 1
-    # ownerless quest: empty location, no character tag
-    ops.add_quest("q4", title="Mystery", description="someone, somewhere")
-    assert state.quests["q4"].owner == ""
-    logging.info("Quest tests passed.")
-
-    # spawn / delete NPC
-    ops.spawn_npc("guard", "warrior", "tavern")
-    assert "guard" in state.characters
-    assert state.characters["guard"].location == "tavern"
-    ops.delete_npc("guard", "Left the town.")
-    assert "guard" not in state.characters
-    assert "Cannot spawn" in ops.spawn_npc("guard", "warrior", "nowhere")  # bad location
-    logging.info("Spawn/delete NPC tests passed.")
-
-    # create item
-    ops.create_item("torch", "forest")
-    assert "torch" in state.locations["forest"].items
-    assert "already exists" in ops.create_item("torch", "forest")
-    logging.info("Create item tests passed.")
-
-    # locations
-    ops.add_location("cave", description="damp cave", connections=["forest"])
-    assert "cave" in state.locations
-    assert "cave" in state.locations["forest"].connections
-    ops.modify_location("cave", description="very dark cave", add_feature="stalactites")
-    assert state.locations["cave"].description == "very dark cave"
-    assert "stalactites" in state.locations["cave"].features
-    ops.remove_location("cave")
-    assert "cave" not in state.locations
-    assert "cave" not in state.locations["forest"].connections
-    logging.info("Location tests passed.")
-
-    # connect / disconnect
-    ops.connect_locations("tavern", "forest")  # already connected via add_location above? no — cave was removed, tavern/forest still exist
-    # reset: disconnect first if already connected
-    if "forest" in state.locations["tavern"].connections:
-        ops.disconnect_locations("tavern", "forest")
-    assert "forest" not in state.locations["tavern"].connections
-    assert "tavern" not in state.locations["forest"].connections
-    ops.connect_locations("tavern", "forest")
-    assert "forest" in state.locations["tavern"].connections
-    assert "tavern" in state.locations["forest"].connections
-    assert "already connected" in ops.connect_locations("tavern", "forest")
-    ops.disconnect_locations("tavern", "forest")
-    assert "forest" not in state.locations["tavern"].connections
-    assert "not connected" in ops.disconnect_locations("tavern", "forest")
-    logging.info("Connect/disconnect location tests passed.")
-
-    # tick time
-    ops.tick_time("The sun sets.", location="tavern")
-    assert state.time == 1
-    assert state.history[-1].text == "The sun sets."
-    logging.info("Tick time test passed.")
-
-    logging.info(f"{__file__} tests completed successfully.")
+    # ============ EVENTS ============
+    def world_event(self, text: str, location_id: str) -> str:
+        """log a narrative event witnessed by everyone present at the location."""
+        witnesses = [cid for cid, c in self.state.characters.items() if c.location == location_id]
+        self._log(text, location_id, witnesses)
+        return text

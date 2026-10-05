@@ -4,6 +4,12 @@
     "title": "What the Nets Brought Up",
     "description": "Identify the crew using the cove and surface enough proof to stop them before they retaliate.",
     "owner": "brenna-deep",
-    "status": "active"
+    "status": "active",
+    "plan": [
+      "investigate harbor-dock and the smuggler crate for clues",
+      "search smugglers-cave for evidence of the crew",
+      "identify the black-hulled sloop and its crew",
+      "gather proof and confront or report the smugglers"
+    ]
   }
 ]

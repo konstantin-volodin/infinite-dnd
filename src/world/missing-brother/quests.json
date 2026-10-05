@@ -4,6 +4,13 @@
     "title": "The Missing Brother",
     "description": "Find clues about the disappearance of Kaelen Swift, who vanished while on patrol near the river.",
     "owner": "elara-swift",
-    "status": "active"
+    "status": "active",
+    "plan": [
+      "search valley-bridge for signs of what happened to Kaelen",
+      "ask around market-square about his last known movements",
+      "check the guild-hall ledger for anything unusual involving him",
+      "track down whoever saw him last",
+      "find Kaelen Swift"
+    ]
   }
 ]

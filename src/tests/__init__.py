@@ -1,5 +1,4 @@
 import logging
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -23,11 +22,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def main() -> None:
-    from src.agents.server import LlamaServer
+    """Dump the exact context (system prompt, tools, context) sent to each agent for inspection.
+
+    Test execution now lives under tests/ (pytest); see README.
+    """
     from .context import dump_all
-    from .tools import run_all
 
     dump_all()
-    with LlamaServer():
-        ok = run_all()
-    sys.exit(0 if ok else 1)

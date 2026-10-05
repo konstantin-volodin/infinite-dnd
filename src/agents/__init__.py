@@ -2,17 +2,13 @@
 
 from .server import LlamaServer
 from .character.agent import agent as CharacterAgent
-from .quest_reviewer.agent import agent as QuestReviewerAgent
-from .time_keeper.agent import agent as TimeKeeperAgent
-from .world_builder.agent import agent as WorldBuilderAgent
+from .dm.agent import agent as DMAgent
 from .action_resolver.agent import agent as ActionResolverAgent, resolve
 
 __all__ = [
     "LlamaServer",
     "CharacterAgent",
-    "QuestReviewerAgent",
-    "TimeKeeperAgent",
-    "WorldBuilderAgent",
+    "DMAgent",
     "ActionResolverAgent",
     "resolve",
 ]

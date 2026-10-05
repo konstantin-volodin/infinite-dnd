@@ -4,11 +4,34 @@ import os
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
+from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
-def create_model() -> OpenAIChatModel:
-    """Create an OpenAIChatModel from environment variables."""
+def create_model() -> Model:
+    """Create a Model from environment variables.
+
+    LLM_PROVIDER=anthropic uses the Claude API (ANTHROPIC_API_KEY); "openai"
+    uses the real OpenAI API (OPENAI_API_KEY) with a configurable reasoning
+    effort; anything else (default, "local") uses the local
+    OpenAI-compatible llama.cpp server.
+    """
+    provider = os.getenv("LLM_PROVIDER", "local")
+    if provider == "anthropic":
+        return AnthropicModel(
+            os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5"),
+            provider=AnthropicProvider(),
+        )
+    if provider == "openai":
+        return OpenAIChatModel(
+            os.getenv("OPENAI_MODEL", "gpt-5.6-luna"),
+            provider=OpenAIProvider(api_key=os.getenv("OPENAI_API_KEY")),
+            settings=OpenAIChatModelSettings(
+                openai_reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium"),
+            ),
+        )
     return OpenAIChatModel(
         os.getenv("LLM_MODEL", ""),
         provider=OpenAIProvider(

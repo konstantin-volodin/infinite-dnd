@@ -10,6 +10,7 @@
 ## actor state
 - role: {{ char.role or 'unknown' }}
 - condition: {{ health_status }} ({{ char.stats.hp }}/{{ char.stats.max_hp }} HP)
+- gold: {{ char.stats.gold }}
 - goal: {{ char.goal or 'none' }}
 {% if char.inventory %}
 - inventory: {{ char.inventory | join(', ') }}
@@ -21,6 +22,7 @@
 ## location
 {% if loc %}
 - place: {{ loc.id }}
+- description: {{ loc.description or 'no description' }}
 {% if loc.features %}
 - features: {{ loc.features | join(', ') }}
 {% endif %}
@@ -53,10 +55,19 @@
 {% if quests %}
 ## active quests
 {% for q in quests %}
-- {{ q.title }} ({{ q.status }})
+- {{ q.title }} ({{ q.status }}; owner: {{ q.owner or 'unassigned' }})
+{% if q.plan and q.current_step < q.plan|length %}
+  - current objective: {{ q.plan[q.current_step] }}
+{% endif %}
 {% endfor %}
 {% endif %}
 
+{% if chronicle %}
+## chronicle (long-term memory, oldest first)
+{% for entry in chronicle %}
+- {{ entry }}
+{% endfor %}
+{% endif %}
 ## recent events
 {% if recent_events %}
 {% for event in recent_events %}
@@ -68,4 +79,4 @@
 
 ---
 
-resolve the action now. use tools for durable state changes, then call `done` with a mechanical summary of what changed.
+resolve the action now. use tools for durable state changes, then call `done` with a one-sentence mechanical summary of what changed — no scene-setting, no flourishes.

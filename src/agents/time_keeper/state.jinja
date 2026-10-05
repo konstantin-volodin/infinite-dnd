@@ -1,8 +1,0 @@
-## 📜 events to time-stamp
-{% for event in events %}
-- [{{ loop.index0 }}] {{ event }}
-{% endfor %}
-
----
-
-Call `estimate` with a list of `{{ events | length }}` integers, one per event above, in the same order. Each integer is the minutes elapsed for that event using the heuristics.

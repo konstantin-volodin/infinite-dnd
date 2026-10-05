@@ -44,34 +44,3 @@ def scenario_dir(scenario: str) -> Path:
     if not path.is_dir():
         raise FileNotFoundError(f"Scenario '{scenario}' not found at {path}")
     return path
-
-
-if __name__ == "__main__":
-    import logging
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
-
-    scenarios = list_scenarios()
-    logging.info(f"discovered scenarios: {scenarios}")
-    assert scenarios, "expected at least one scenario directory"
-    assert all(isinstance(s, str) for s in scenarios)
-
-    for s in scenarios:
-        manifest = read_manifest(s)
-        logging.info(f"  {s}: {manifest}")
-        assert "title" in manifest and "pc" in manifest and "hook" in manifest, f"manifest missing keys for {s}"
-
-    rng = random.Random(0)
-    picks = {pick_scenario(rng) for _ in range(20)}
-    logging.info(f"deterministic picks across 20 draws: {picks}")
-    assert picks.issubset(set(scenarios))
-
-    chosen = pick_scenario(random.Random(42))
-    logging.info(f"random.Random(42) → {chosen}")
-    assert chosen in scenarios
-
-    d = scenario_dir(scenarios[0])
-    assert d.is_dir()
-    logging.info(f"scenario_dir('{scenarios[0]}') = {d}")
-
-    logging.info(f"{__file__} tests completed successfully.")

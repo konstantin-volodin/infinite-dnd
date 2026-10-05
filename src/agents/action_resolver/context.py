@@ -58,6 +58,7 @@ def action_resolver_context(char: Character, state: WorldState, description: str
         loc=loc,
         others=others,
         quests=quests,
+        chronicle=state.chronicle[-3:],
         recent_events=recent_events,
         health_status=get_health_status(char),
     )

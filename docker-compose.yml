@@ -1,0 +1,36 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    volumes:
+      - ./world-state:/app/world-state:ro
+      - ./logs:/app/logs:ro
+    restart: unless-stopped
+
+  # One game session per invocation: `docker compose run --rm game`. Not
+  # auto-restarted — run_game.py is one-shot (plays to --turns or quest
+  # resolution, then exits), and starting one is a deliberate action, not a
+  # standing service.
+  game:
+    build: .
+    env_file: .env
+    depends_on:
+      - app
+    command: ["infinite-dnd", "--web", "--web-url", "http://app:8765", "--turns", "50"]
+    volumes:
+      - ./world-state:/app/world-state
+      - ./logs:/app/logs
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  caddy_data:

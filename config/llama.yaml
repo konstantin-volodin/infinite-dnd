@@ -1,0 +1,110 @@
+# llama-server tuning profiles. Keys map 1:1 to llama-server flags (`ctx-size: 8192`
+# becomes `--ctx-size 8192`; a bare `no-mmap:` becomes `--no-mmap`), so any
+# llama-server option can be added without code changes. Every profile inherits from
+# `default` and overrides only what it changes.
+# Select a profile with LLM_PROFILE=<name> or `scripts/bench.py --profile <name>`.
+
+default:
+  ctx-size: 8192
+  n-predict: -1
+  parallel: 1
+  n-gpu-layers: 99
+  n-cpu-moe: 11
+  threads: 8
+  threads-batch: 8
+  batch-size: 1024
+  ubatch-size: 512
+  flash-attn: "on"
+  reasoning: "off"
+  temp: 1.0
+  top-p: 0.95
+  top-k: 64
+  min-p: 0.01
+  repeat-penalty: 1.0
+
+# One KV slot per agent (character/dm/resolver) so they stop evicting each other,
+# plus prefix reuse across runs. Costs 3x KV-cache VRAM.
+slots:
+  parallel: 3
+  ctx-size: 24576
+  cache-reuse: 256
+
+# Two more MoE layers' experts on GPU (~900 MB VRAM headroom at baseline).
+moe9:
+  n-cpu-moe: 9
+
+# Larger microbatch for prefill throughput; costs compute-buffer VRAM.
+ubatch:
+  batch-size: 2048
+  ubatch-size: 1024
+
+# 5600X has 6 physical cores; 8 threads oversubscribes them during decode.
+threads6:
+  threads: 6
+  threads-batch: 6
+
+# Force expert weights resident in RAM instead of paging from disk via mmap.
+nommap:
+  no-mmap:
+
+# Stream CPU experts through the GPU in bigger chunks during prefill;
+# one extra CPU MoE layer pays for the larger compute buffer.
+bigbatch:
+  batch-size: 4096
+  ubatch-size: 2048
+  n-cpu-moe: 12
+
+# HARMFUL on the 3060 Ti: q8_0 KV wedged the server (requests hung past the
+# client's 600s timeout, run killed after 29min). Kept as a warning.
+kvq:
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  n-cpu-moe: 9
+  batch-size: 2048
+  ubatch-size: 1024
+
+# Self-speculative decoding: drafts from the request's own token history, no
+# draft model needed. Tuned for structured/repetitive text per llama.cpp docs.
+ngram:
+  spec-type: ngram-map-k4v
+  spec-ngram-map-k4v-size-n: 8
+  spec-ngram-map-k4v-size-m: 8
+  spec-ngram-map-k4v-min-hits: 2
+  spec-draft-n-max: 64
+
+# ngram-map-k4v never drafted (out==decoded). ngram-mod shares its hash pool
+# across requests, so patterns from earlier agent runs can seed drafts.
+# Result: also never drafted — responses too short/varied. Both kept as records.
+ngram-mod:
+  spec-type: ngram-mod
+  spec-draft-n-max: 16
+
+# HARMFUL on the 3060 Ti: the 4096 compute buffer spills past dedicated VRAM
+# into shared memory (7.6GB used, GPU pegged, prefill crawls). 2048 is the max
+# microbatch that fits; kept as a warning.
+bigbatch2:
+  batch-size: 4096
+  ubatch-size: 4096
+  n-cpu-moe: 13
+
+# Winners combined: expert streaming via 2048 microbatch + RAM-resident weights.
+combo:
+  batch-size: 4096
+  ubatch-size: 2048
+  n-cpu-moe: 12
+  no-mmap:
+
+# Prefill ceiling probe: 3072 microbatch (4096 spills; does 3072 fit?).
+combo2:
+  batch-size: 4096
+  ubatch-size: 3072
+  n-cpu-moe: 13
+  no-mmap:
+
+# Gemma-4 MTP drafter (llama.cpp >= b9568): shares the target's KV cache,
+# verified 0.72 acceptance upstream. Quantized KV breaks MTP acceptance.
+mtp:
+  model-draft: C:/Users/Konstantin/.cache/huggingface/hub/models--unsloth--gemma-4-26B-A4B-it-GGUF/snapshots/3365c68df1a83799b846d05324ebfadbb8cc70b3/mtp-gemma-4-26B-A4B-it-Q8_0.gguf
+  spec-type: draft-mtp
+  spec-draft-n-max: 4
+  n-cpu-moe: 12

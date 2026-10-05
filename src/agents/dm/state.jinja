@@ -1,0 +1,75 @@
+{% if chronicle %}
+## chronicle (long-term memory, oldest first)
+{% for entry in chronicle %}
+- {{ entry }}
+{% endfor %}
+{% endif %}
+## recent context (for continuity — do not re-estimate time for these)
+{% if context_events %}
+{% for event in context_events %}
+- {{ event }}
+{% endfor %}
+{% else %}
+_no prior events._
+{% endif %}
+
+## new events this turn — estimate time for exactly these, in order
+{% for event in new_events %}
+- [{{ loop.index0 }}] {{ event }}
+{% endfor %}
+
+## 🏰 existing locations
+{% for lid in location_ids %}
+- {{ lid }}
+{% endfor %}
+
+## 👥 existing characters
+{% for cid in character_ids %}
+- {{ cid }}
+{% endfor %}
+
+{% if item_ids %}
+## 🎒 existing items
+{% for item in item_ids %}
+- {{ item }}
+{% endfor %}
+{% endif %}
+
+{% if quest_ids %}
+## 📜 existing quests
+{% for qid in quest_ids %}
+- {{ qid }}
+{% endfor %}
+{% endif %}
+
+## 🗺️ active quests
+{% for q in quests %}
+- **{{ q.id }}** — {{ q.title }} _(status: {{ q.status }})_
+  - {{ q.description }}
+  - owner: {{ q.owner }}
+{% if q.plan %}
+  - plan:
+{% for step in q.plan %}
+    {{ '→ current: ' if loop.index0 == q.current_step else ('- done: ' if loop.index0 < q.current_step else '- ') }}{{ step }}
+{% endfor %}
+{% else %}
+  - no plan set.
+{% endif %}
+{% if q.steps %}
+  - log so far: {{ q.steps | join(' → ') }}
+{% endif %}
+{% endfor %}
+
+{% if factions %}
+## 🕰️ faction agendas (off-screen)
+{% for f in factions %}
+- **{{ f.id }}** — {{ f.name }}: {{ f.goal }}
+{% for clock in f.clocks %}
+  - clock `{{ clock.id }}` ({{ clock.name }}): {{ 'consequence already fired' if clock.consequence_triggered else clock.progress ~ '/' ~ clock.segments }}
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+---
+
+Call `report` with new entities, quest progress, and exactly {{ new_events|length }} minute estimates (one per new event above, in order).

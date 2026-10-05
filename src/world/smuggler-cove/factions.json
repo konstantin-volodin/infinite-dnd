@@ -1,0 +1,37 @@
+[
+  {
+    "id": "black-hull-crew",
+    "name": "The Black-Hull Crew",
+    "goal": "Move the contraband out of the cove and silence anyone who can tie the sloop to the Teal Moon",
+    "clocks": [
+      {
+        "id": "clear-the-cave",
+        "name": "Empty the smugglers' cave",
+        "progress": 0,
+        "segments": 4,
+        "consequence": "The crew hauls the last contraband crates from the smugglers-cave onto the black-hulled sloop — the evidence is nearly gone."
+      },
+      {
+        "id": "retaliation",
+        "name": "Prepare retaliation",
+        "progress": 0,
+        "segments": 8,
+        "consequence": "The black-hulled sloop lands a raiding party outside the village, hunting whoever opened the crate."
+      }
+    ]
+  },
+  {
+    "id": "cove-villagers",
+    "name": "The Cove Villagers",
+    "goal": "Keep the village out of a fight it cannot win, whatever the truth costs",
+    "clocks": [
+      {
+        "id": "fear-spreads",
+        "name": "Word of the crate spreads",
+        "progress": 0,
+        "segments": 6,
+        "consequence": "Frightened villagers gather at the harbor-dock demanding Brenna throw the crate back into the sea, proof and all."
+      }
+    ]
+  }
+]
