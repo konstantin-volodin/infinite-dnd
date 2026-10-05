@@ -11,7 +11,12 @@ from pathlib import Path
 
 from src.engine.rules import get_health_status
 from src.engine.state.models import Character, HistoryEvent, Quest, WorldState
-from src.interface.world_state import DEFAULT_STATE_DIR, format_clock, list_state_runs, load_view
+from src.interface.world_state import (
+    DEFAULT_STATE_DIR,
+    format_clock,
+    list_state_runs,
+    load_view,
+)
 
 
 def build_recap(state: WorldState, *, title: str, scenario: str, run_id: str) -> str:
@@ -65,7 +70,11 @@ def _quest_outcomes(quests: dict[str, Quest]) -> str:
         return ""
     lines = ["## Quest Outcomes"]
     for quest in quests.values():
-        progress = f"{quest.current_step}/{len(quest.plan)} steps" if quest.plan else f"{len(quest.steps)} steps logged"
+        progress = (
+            f"{quest.current_step}/{len(quest.plan)} steps"
+            if quest.plan
+            else f"{len(quest.steps)} steps logged"
+        )
         line = f"- **{quest.title}** — {quest.status} ({progress})"
         if quest.steps:
             line += f"; last: {quest.steps[-1]}"
@@ -87,11 +96,26 @@ def _epilogue(characters: dict[str, Character]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Export a markdown recap of a finished run.")
-    parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR, help="Root directory of saved world states.")
-    parser.add_argument("--scenario", help="Scenario id (default: newest run's scenario).")
-    parser.add_argument("--run-id", help="Run id (default: newest run of the chosen scenario).")
-    parser.add_argument("--out", type=Path, help="Output path (default: <run-id>_recap.md next to the run's snapshots).")
+    parser = argparse.ArgumentParser(
+        description="Export a markdown recap of a finished run."
+    )
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        default=DEFAULT_STATE_DIR,
+        help="Root directory of saved world states.",
+    )
+    parser.add_argument(
+        "--scenario", help="Scenario id (default: newest run's scenario)."
+    )
+    parser.add_argument(
+        "--run-id", help="Run id (default: newest run of the chosen scenario)."
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        help="Output path (default: <run-id>_recap.md next to the run's snapshots).",
+    )
     args = parser.parse_args(argv)
 
     runs = list_state_runs(args.state_dir)
@@ -107,7 +131,9 @@ def main(argv: list[str] | None = None) -> int:
     state = WorldState.model_validate(view["state"])
     markdown = build_recap(state, title=view["title"], scenario=scenario, run_id=run_id)
 
-    out_path = args.out or (Path(args.state_dir) / scenario / run_id / f"{run_id}_recap.md")
+    out_path = args.out or (
+        Path(args.state_dir) / scenario / run_id / f"{run_id}_recap.md"
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(markdown, encoding="utf-8")
     print(out_path)

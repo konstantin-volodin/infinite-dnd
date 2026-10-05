@@ -1,4 +1,3 @@
-
 import os
 
 from pathlib import Path
@@ -9,6 +8,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
+
 
 def create_model() -> Model:
     """Create a Model from environment variables.
@@ -40,12 +40,14 @@ def create_model() -> Model:
         ),
     )
 
+
 _env = Environment(
     loader=FileSystemLoader(Path(__file__).parent),
     keep_trailing_newline=True,
     trim_blocks=True,
     lstrip_blocks=True,
 )
+
 
 def render(template_path: str, **kwargs) -> str:
     """Render a Jinja2 template relative to src/agents/."""

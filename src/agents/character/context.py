@@ -24,7 +24,9 @@ def character_context(char: Character, state: WorldState) -> str:
     health_status = get_health_status(char)
     loc = state.locations.get(char.location)
     if loc:
-        loc = loc.model_copy(update={"connections": connected_location_ids(state, loc.id)})
+        loc = loc.model_copy(
+            update={"connections": connected_location_ids(state, loc.id)}
+        )
     nearby_routes = [
         (
             connection_id,
@@ -40,17 +42,18 @@ def character_context(char: Character, state: WorldState) -> str:
 
     # relevant quests
     quests = [
-        q for q in state.quests.values()
+        q
+        for q in state.quests.values()
         if q.owner == char.id and q.status.lower() not in ("completed", "failed")
     ]
     quest_ids = {quest.id for quest in quests}
-    deadlines = [(faction.name, clock) for faction, clock in quest_deadline_clocks(state, quest_ids)]
+    deadlines = [
+        (faction.name, clock)
+        for faction, clock in quest_deadline_clocks(state, quest_ids)
+    ]
 
     # Recent events (only ones this character witnessed)
-    recent_events = [
-        e.text for e in state.history
-        if char.id in e.characters
-    ][-20:]
+    recent_events = [e.text for e in state.history if char.id in e.characters][-20:]
 
     # Someone speaking to me?
     someone_speaking_to_me = False
@@ -59,7 +62,9 @@ def character_context(char: Character, state: WorldState) -> str:
         someone_speaking_to_me = is_dialogue(last) and not last.startswith(char.id)
 
     # Others present, with visible condition (role, health if not healthy)
-    present_characters = characters_in_location(state, char.location, exclude_character_id=char.id)
+    present_characters = characters_in_location(
+        state, char.location, exclude_character_id=char.id
+    )
     others = []
     for c in present_characters:
         status = get_health_status(c)

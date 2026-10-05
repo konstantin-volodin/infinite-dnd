@@ -25,7 +25,15 @@ from src.engine.runtime.loop import (
 )
 from src.agents.dm.agent import DMResult
 from src.agents.dm.tools import Create, Modify
-from src.engine.state.models import Character, Faction, HistoryEvent, Location, ProgressClock, Quest, WorldState
+from src.engine.state.models import (
+    Character,
+    Faction,
+    HistoryEvent,
+    Location,
+    ProgressClock,
+    Quest,
+    WorldState,
+)
 from src.engine.state.operations import WorldOperations
 
 
@@ -33,7 +41,15 @@ def _state() -> WorldState:
     return WorldState(
         locations={"tavern": Location(id="tavern")},
         characters={"hero": Character(id="hero", role="warrior", location="tavern")},
-        quests={"q1": Quest(id="q1", title="Clear the Cave", description="", owner="hero", plan=["scout", "clear"])},
+        quests={
+            "q1": Quest(
+                id="q1",
+                title="Clear the Cave",
+                description="",
+                owner="hero",
+                plan=["scout", "clear"],
+            )
+        },
     )
 
 
@@ -119,9 +135,10 @@ def test_dm_npc_reveal_rejects_an_organization_at_the_turns_location():
         role="smuggling faction",
     )
 
-    assert not _can_anchor_new_npc(create, [_event(
-        "hero learns: The Crimson Tide trading company is using the cove."
-    )])
+    assert not _can_anchor_new_npc(
+        create,
+        [_event("hero learns: The Crimson Tide trading company is using the cove.")],
+    )
 
 
 def test_dm_npc_reveal_allows_a_person_affiliated_with_an_organization():
@@ -176,12 +193,14 @@ def test_tick_rejects_npc_reveal_at_an_unsupported_remote_location(monkeypatch):
 
     async def invent_handler_location(*_args):
         return DMResult(
-            creates=[Create(
-                type="npc",
-                name="the-handler",
-                description="An unknown shore contact.",
-                location="village-square",
-            )],
+            creates=[
+                Create(
+                    type="npc",
+                    name="the-handler",
+                    description="An unknown shore contact.",
+                    location="village-square",
+                )
+            ],
             modifies=[],
             minutes=[1],
         )
@@ -227,13 +246,15 @@ def test_tick_does_not_turn_a_named_company_into_a_character(monkeypatch):
 
     async def misclassify_company(*_args):
         return DMResult(
-            creates=[Create(
-                type="npc",
-                name="Crimson Tide trading company",
-                description="A smuggling faction operating out of the eastern ports.",
-                location="tavern",
-                role="smuggling faction",
-            )],
+            creates=[
+                Create(
+                    type="npc",
+                    name="Crimson Tide trading company",
+                    description="A smuggling faction operating out of the eastern ports.",
+                    location="tavern",
+                    role="smuggling faction",
+                )
+            ],
             modifies=[],
             minutes=[2],
         )
@@ -273,12 +294,14 @@ def test_tick_does_not_materialize_a_vague_placeholder_location(monkeypatch):
 
     async def invent_placeholder(*_args):
         return DMResult(
-            creates=[Create(
-                type="location",
-                name="upriver-location",
-                description="An unspecified upriver source of cargo.",
-                location="tavern",
-            )],
+            creates=[
+                Create(
+                    type="location",
+                    name="upriver-location",
+                    description="An unspecified upriver source of cargo.",
+                    location="tavern",
+                )
+            ],
             modifies=[],
             minutes=[5],
         )
@@ -305,18 +328,24 @@ def test_tick_does_not_place_a_previously_mentioned_npc_after_travel(monkeypatch
 
     async def reveal_calla_from_prior_context(*_args):
         return DMResult(
-            creates=[Create(
-                type="npc",
-                name="Calla",
-                description="A scullion mentioned on an earlier turn.",
-                location="servants-quarters",
-            )],
+            creates=[
+                Create(
+                    type="npc",
+                    name="Calla",
+                    description="A scullion mentioned on an earlier turn.",
+                    location="servants-quarters",
+                )
+            ],
             modifies=[],
             minutes=[10],
         )
 
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", travel_to_servants_quarters)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", reveal_calla_from_prior_context)
+    monkeypatch.setattr(
+        "src.engine.runtime.loop.flow_agent_turn", travel_to_servants_quarters
+    )
+    monkeypatch.setattr(
+        "src.engine.runtime.loop.flow_dm", reveal_calla_from_prior_context
+    )
 
     asyncio.run(tick("hero", state, 0, logger=None))
 
@@ -341,12 +370,14 @@ def test_tick_does_not_place_a_remembered_npc_at_the_travel_destination(monkeypa
 
     async def place_calla_at_foyer(*_args):
         return DMResult(
-            creates=[Create(
-                type="npc",
-                name="Calla",
-                description="A new scullion who was asking about the vault.",
-                location="manor-foyer",
-            )],
+            creates=[
+                Create(
+                    type="npc",
+                    name="Calla",
+                    description="A new scullion who was asking about the vault.",
+                    location="manor-foyer",
+                )
+            ],
             modifies=[],
             minutes=[10, 1],
         )
@@ -422,17 +453,23 @@ def test_tick_skips_dm_item_already_created_by_the_action(monkeypatch):
 
     async def create_journal(tool, world, **_kwargs):
         if isinstance(tool, Action):
-            return WorldOperations(world).create_item("Alan's leather journal", "tavern")
-        raise AssertionError("DM enrichment must not recreate an item already in the world")
+            return WorldOperations(world).create_item(
+                "Alan's leather journal", "tavern"
+            )
+        raise AssertionError(
+            "DM enrichment must not recreate an item already in the world"
+        )
 
     async def repeat_journal(*_args):
         return DMResult(
-            creates=[Create(
-                type="item",
-                name="Alan's leather journal",
-                description="A journal revealed by the resolved search.",
-                location="tavern",
-            )],
+            creates=[
+                Create(
+                    type="item",
+                    name="Alan's leather journal",
+                    description="A journal revealed by the resolved search.",
+                    location="tavern",
+                )
+            ],
             modifies=[],
             minutes=[5],
         )
@@ -451,6 +488,7 @@ def test_tick_skips_dm_item_already_created_by_the_action(monkeypatch):
 
 # ============ SCHEDULER ============
 
+
 def test_scene_scheduler_skips_goal_less_unaddressed_npcs():
     state = _state()
     state.characters["dockmaster"] = Character(id="dockmaster", location="tavern")
@@ -462,11 +500,13 @@ def test_scene_scheduler_includes_goal_less_npc_after_direct_address():
     state = _state()
     state.characters["dockmaster"] = Character(id="dockmaster", location="tavern")
     WorldOperations(state).speak("hero", "Show me the cargo ledger.", "dockmaster")
-    state.history.append(HistoryEvent(
-        text="dockmaster's relationship with hero is now 'wary'.",
-        location="tavern",
-        characters=["dockmaster", "hero"],
-    ))
+    state.history.append(
+        HistoryEvent(
+            text="dockmaster's relationship with hero is now 'wary'.",
+            location="tavern",
+            characters=["dockmaster", "hero"],
+        )
+    )
 
     assert _scene_actors(state, "hero") == ["hero", "dockmaster"]
 
@@ -490,6 +530,7 @@ def test_scene_scheduler_prioritizes_a_directly_addressed_npc_reply():
 
 # ============ STALL DETECTION ============
 
+
 def test_fresh_state_not_stalled():
     assert not _is_stalled(_state())
 
@@ -510,14 +551,26 @@ def test_quest_advancement_resets_quiet_clock():
 
 def test_idle_chatter_triggers_stall():
     state = _state()
-    for text in ('hero says: "hm"', "hero waits.", 'hero says to bob: "well?"', "hero waits.", 'hero says: "so..."'):
+    for text in (
+        'hero says: "hm"',
+        "hero waits.",
+        'hero says to bob: "well?"',
+        "hero waits.",
+        'hero says: "so..."',
+    ):
         state.history.append(_event(text))
     assert _is_stalled(state)
 
 
 def test_mixed_recent_events_not_stalled():
     state = _state()
-    for text in ('hero says: "hm"', "hero waits.", "hero picks up 'sword'.", "hero waits.", 'hero says: "so..."'):
+    for text in (
+        'hero says: "hm"',
+        "hero waits.",
+        "hero picks up 'sword'.",
+        "hero waits.",
+        'hero says: "so..."',
+    ):
         state.history.append(_event(text))
     assert not _is_stalled(state)
 
@@ -541,10 +594,13 @@ def test_director_reset_suppresses_consecutive_fire():
 
 # ============ TURN FEEDBACK ============
 
+
 def test_resolution_without_state_event_is_recorded_for_player_feedback():
     state = _state()
 
-    events = _record_resolution_if_needed(state, "hero", 0, "  Nothing useful is hidden here.  ")
+    events = _record_resolution_if_needed(
+        state, "hero", 0, "  Nothing useful is hidden here.  "
+    )
 
     assert [event.text for event in events] == ["Nothing useful is hidden here."]
     assert events[0].location == "tavern"
@@ -565,36 +621,49 @@ def test_direct_actions_have_deterministic_time_floors():
     assert _minimum_action_minutes(Wait(actor="hero")) == 5
     assert _minimum_action_minutes(Speak(actor="hero", message="hello")) == 1
     assert _minimum_action_minutes(Attack(actor="hero", target="bandit")) == 1
-    assert _minimum_action_minutes(Action(actor="hero", description="search the archive")) == 5
-    assert _minimum_action_minutes(Action(actor="hero", description="open the door")) == 1
+    assert (
+        _minimum_action_minutes(Action(actor="hero", description="search the archive"))
+        == 5
+    )
+    assert (
+        _minimum_action_minutes(Action(actor="hero", description="open the door")) == 1
+    )
 
 
 def test_only_active_interactions_can_accelerate_faction_clocks():
     state = _state()
-    state.characters["guild-guard"] = Character(id="guild-guard", role="guild sentry", location="tavern")
+    state.characters["guild-guard"] = Character(
+        id="guild-guard", role="guild sentry", location="tavern"
+    )
     state.factions["guild"] = Faction(
         id="guild",
         name="The Guild",
         goal="Control the harbor",
-        clocks=[ProgressClock(
-            id="alarm",
-            name="Raise the alarm",
-            consequence="The gates close.",
-            segments=4,
-        )],
+        clocks=[
+            ProgressClock(
+                id="alarm",
+                name="Raise the alarm",
+                consequence="The gates close.",
+                segments=4,
+            )
+        ],
     )
 
     detected = [_event("A guild lookout spots hero and warns the sentries.")]
-    direct = [HistoryEvent(
-        text='hero says to guild-guard: "Sound the alarm."',
-        location="tavern",
-        characters=["hero", "guild-guard"],
-    )]
+    direct = [
+        HistoryEvent(
+            text='hero says to guild-guard: "Sound the alarm."',
+            location="tavern",
+            characters=["hero", "guild-guard"],
+        )
+    ]
 
     def can_accelerate(tool, events=detected):
         return _can_accelerate_faction_clock(state, tool, "guild", "alarm", events)
 
-    assert can_accelerate(Speak(actor="hero", target="guild-guard", message="sound the alarm"), direct)
+    assert can_accelerate(
+        Speak(actor="hero", target="guild-guard", message="sound the alarm"), direct
+    )
     assert can_accelerate(Action(actor="hero", description="burn the guild records"))
     assert can_accelerate(Attack(actor="hero", target="guild-guard"))
     assert not can_accelerate(Travel(actor="hero", destination="road"))
@@ -608,12 +677,14 @@ def test_finding_faction_evidence_does_not_accelerate_its_clock():
         id="black-hull-crew",
         name="The Black-Hull Crew",
         goal="Move contraband and silence witnesses",
-        clocks=[ProgressClock(
-            id="retaliation",
-            name="Prepare retaliation",
-            consequence="The crew attacks the village.",
-            segments=8,
-        )],
+        clocks=[
+            ProgressClock(
+                id="retaliation",
+                name="Prepare retaliation",
+                consequence="The crew attacks the village.",
+                segments=8,
+            )
+        ],
     )
     event = _event(
         "hero learns: The crate bears three crossed anchors in black paint—symbol of the Deepwater Compact crew."
@@ -634,12 +705,14 @@ def test_notice_board_evidence_does_not_accelerate_faction_clock():
         id="black-hull-crew",
         name="The Black-Hull Crew",
         goal="Move contraband and silence witnesses",
-        clocks=[ProgressClock(
-            id="retaliation",
-            name="Prepare retaliation",
-            consequence="The crew attacks the village.",
-            segments=8,
-        )],
+        clocks=[
+            ProgressClock(
+                id="retaliation",
+                name="Prepare retaliation",
+                consequence="The crew attacks the village.",
+                segments=8,
+            )
+        ],
     )
     event = _event(
         "hero learns: The harbormaster's notice board flags the black-hulled sloop "
@@ -661,12 +734,14 @@ def test_faction_lookout_noticing_actor_can_accelerate_clock():
         id="black-hull-crew",
         name="The Black-Hull Crew",
         goal="Move contraband and silence witnesses",
-        clocks=[ProgressClock(
-            id="retaliation",
-            name="Prepare retaliation",
-            consequence="The crew attacks the village.",
-            segments=8,
-        )],
+        clocks=[
+            ProgressClock(
+                id="retaliation",
+                name="Prepare retaliation",
+                consequence="The crew attacks the village.",
+                segments=8,
+            )
+        ],
     )
     event = _event("A Black-Hull Crew lookout notices hero searching the cave.")
 
@@ -683,16 +758,26 @@ def test_final_objective_requires_an_active_resolution_attempt():
     quest = _state().quests["q1"]
     quest.current_step = len(quest.plan) - 1
 
-    assert not _can_advance_final_objective(quest, Travel(actor="hero", destination="cave"))
+    assert not _can_advance_final_objective(
+        quest, Travel(actor="hero", destination="cave")
+    )
     assert not _can_advance_final_objective(quest, Wait(actor="hero"))
-    assert not _can_advance_final_objective(quest, Action(actor="ally", description="clear the cave"))
-    assert not _can_advance_final_objective(quest, Action(actor="hero", description="clear the cave"))
+    assert not _can_advance_final_objective(
+        quest, Action(actor="ally", description="clear the cave")
+    )
+    assert not _can_advance_final_objective(
+        quest, Action(actor="hero", description="clear the cave")
+    )
     assert _can_advance_final_objective(
-        quest, Action(actor="hero", description="clear the cave"), [_event("hero cleared the cave.")]
+        quest,
+        Action(actor="hero", description="clear the cave"),
+        [_event("hero cleared the cave.")],
     )
     quest.plan[-1] = "report the smugglers"
     assert _can_advance_final_objective(
-        quest, Speak(actor="hero", message="I report the smugglers."), [_event("hero reported the smugglers.")]
+        quest,
+        Speak(actor="hero", message="I report the smugglers."),
+        [_event("hero reported the smugglers.")],
     )
 
 
@@ -768,11 +853,13 @@ def test_dialogue_objective_requires_the_message_to_name_a_quest_topic():
     def speech(message: str) -> tuple[Speak, list[HistoryEvent]]:
         return (
             Speak(actor="hero", target="marta", message=message),
-            [HistoryEvent(
-                text=f'hero says to marta: "{message}"',
-                location="servants-quarters",
-                characters=["hero", "marta"],
-            )],
+            [
+                HistoryEvent(
+                    text=f'hero says to marta: "{message}"',
+                    location="servants-quarters",
+                    characters=["hero", "marta"],
+                )
+            ],
         )
 
     unrelated_tool, unrelated_events = speech("How is the weather?")
@@ -907,14 +994,16 @@ def test_tick_advances_dialogue_objective_from_the_addressed_npcs_reply(monkeypa
         "determine what Calla knows and her motives",
         "decide whether to investigate the vault",
     ]
-    state.history = [HistoryEvent(
-        text=(
-            'hero says to calla: "What do you know about the vault behind the '
-            'cold hearth, and why are you looking for it?"'
-        ),
-        location="tavern",
-        characters=["hero", "calla"],
-    )]
+    state.history = [
+        HistoryEvent(
+            text=(
+                'hero says to calla: "What do you know about the vault behind the '
+                'cold hearth, and why are you looking for it?"'
+            ),
+            location="tavern",
+            characters=["hero", "calla"],
+        )
+    ]
 
     async def answer_question(*_args):
         return Speak(
@@ -929,16 +1018,20 @@ def test_tick_advances_dialogue_objective_from_the_addressed_npcs_reply(monkeypa
     async def report_progress(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="update_quest",
-                target_id="q1",
-                advance=True,
-                step="Calla revealed what she knows about the vault and why she is seeking it",
-            )],
+            modifies=[
+                Modify(
+                    action="update_quest",
+                    target_id="q1",
+                    advance=True,
+                    step="Calla revealed what she knows about the vault and why she is seeking it",
+                )
+            ],
             minutes=[2],
         )
 
-    monkeypatch.setattr("src.engine.runtime.loop._pick_next_actor", lambda *_args: "calla")
+    monkeypatch.setattr(
+        "src.engine.runtime.loop._pick_next_actor", lambda *_args: "calla"
+    )
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", answer_question)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
 
@@ -954,13 +1047,20 @@ def test_tick_advances_dialogue_objective_from_the_addressed_npcs_reply(monkeypa
 
 def test_location_bound_objective_requires_evidence_at_a_named_location():
     state = _state()
-    state.locations.update({
-        "guild-hall": Location(id="guild-hall"),
-        "trade-dock": Location(id="trade-dock"),
-    })
+    state.locations.update(
+        {
+            "guild-hall": Location(id="guild-hall"),
+            "trade-dock": Location(id="trade-dock"),
+        }
+    )
     quest = state.quests["q1"]
-    quest.plan = ["check the guild-hall ledger for anything unusual", "find the missing guard"]
-    tool = Action(actor="hero", description="inspect the cargo ledger for unusual shipments")
+    quest.plan = [
+        "check the guild-hall ledger for anything unusual",
+        "find the missing guard",
+    ]
+    tool = Action(
+        actor="hero", description="inspect the cargo ledger for unusual shipments"
+    )
 
     state.characters["hero"].location = "trade-dock"
     remote_evidence = HistoryEvent(
@@ -984,7 +1084,9 @@ def test_referential_contact_objective_accepts_a_known_quest_link():
     state.characters["hero"].knowledge = [
         "Dockmaster Alan met Kaelen at the bridge on the day he vanished."
     ]
-    state.characters["dockmaster-alan"] = Character(id="dockmaster-alan", location="tavern")
+    state.characters["dockmaster-alan"] = Character(
+        id="dockmaster-alan", location="tavern"
+    )
     tool = Speak(
         actor="hero",
         target="dockmaster-alan",
@@ -1008,17 +1110,23 @@ def test_referential_contact_objective_rejects_an_ungrounded_conversation():
     state.characters["hero"].knowledge = [
         "Dockmaster Alan met Kaelen at the bridge on the day he vanished."
     ]
-    state.characters["dockmaster-alan"] = Character(id="dockmaster-alan", location="tavern")
+    state.characters["dockmaster-alan"] = Character(
+        id="dockmaster-alan", location="tavern"
+    )
     event = HistoryEvent(
         text='hero says to dockmaster-alan: "How is the weather?"',
         location="tavern",
         characters=["hero", "dockmaster-alan"],
     )
 
-    unrelated = Speak(actor="hero", target="dockmaster-alan", message="How is the weather?")
+    unrelated = Speak(
+        actor="hero", target="dockmaster-alan", message="How is the weather?"
+    )
     assert not _can_advance_objective(state, quest, unrelated, [event])
 
-    related = Speak(actor="hero", target="dockmaster-alan", message="What happened to Kaelen?")
+    related = Speak(
+        actor="hero", target="dockmaster-alan", message="What happened to Kaelen?"
+    )
     state.characters["hero"].knowledge = ["Dockmaster Alan handles the port's cargo."]
     assert not _can_advance_objective(state, quest, related, [event])
 
@@ -1163,7 +1271,9 @@ def test_final_track_objective_requires_direct_target_resolution():
 
 
 @pytest.mark.parametrize("quest_id", ["q1", "Q1"])
-def test_tick_rejects_direct_final_completion_from_clue_discovery(monkeypatch, quest_id):
+def test_tick_rejects_direct_final_completion_from_clue_discovery(
+    monkeypatch, quest_id
+):
     state = _state()
     quest = state.quests["q1"]
     quest.plan[-1] = "find the lost amulet"
@@ -1182,7 +1292,9 @@ def test_tick_rejects_direct_final_completion_from_clue_discovery(monkeypatch, q
     async def report_clue(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(action="update_quest", target_id=quest_id, status="completed")],
+            modifies=[
+                Modify(action="update_quest", target_id=quest_id, status="completed")
+            ],
             minutes=[1],
         )
 
@@ -1243,7 +1355,9 @@ def test_tick_rejects_dialogue_progress_from_inspecting_a_roster(monkeypatch):
 
     async def resolve_roster(tool, world, **_kwargs):
         if isinstance(tool, Action):
-            event = _event("hero learns: The servants are Kae, Marta, Thorne, and Colm.")
+            event = _event(
+                "hero learns: The servants are Kae, Marta, Thorne, and Colm."
+            )
             world.history.append(event)
             return event.text
         raise AssertionError("the blocked quest update must not reach the resolver")
@@ -1251,12 +1365,14 @@ def test_tick_rejects_dialogue_progress_from_inspecting_a_roster(monkeypatch):
     async def report_progress(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="update_quest",
-                target_id="q1",
-                advance=True,
-                step="identified the servants in the manor",
-            )],
+            modifies=[
+                Modify(
+                    action="update_quest",
+                    target_id="q1",
+                    advance=True,
+                    step="identified the servants in the manor",
+                )
+            ],
             minutes=[3],
         )
 
@@ -1273,16 +1389,23 @@ def test_tick_rejects_dialogue_progress_from_inspecting_a_roster(monkeypatch):
 
 def test_tick_rejects_location_bound_progress_from_a_different_location(monkeypatch):
     state = _state()
-    state.locations.update({
-        "guild-hall": Location(id="guild-hall"),
-        "trade-dock": Location(id="trade-dock"),
-    })
+    state.locations.update(
+        {
+            "guild-hall": Location(id="guild-hall"),
+            "trade-dock": Location(id="trade-dock"),
+        }
+    )
     state.characters["hero"].location = "trade-dock"
     quest = state.quests["q1"]
-    quest.plan = ["check the guild-hall ledger for anything unusual", "find the missing guard"]
+    quest.plan = [
+        "check the guild-hall ledger for anything unusual",
+        "find the missing guard",
+    ]
 
     async def inspect_trade_dock_ledger(*_args):
-        return Action(actor="hero", description="inspect the cargo ledger for unusual shipments")
+        return Action(
+            actor="hero", description="inspect the cargo ledger for unusual shipments"
+        )
 
     async def resolve_search(tool, world, **_kwargs):
         if isinstance(tool, Action):
@@ -1298,16 +1421,20 @@ def test_tick_rejects_location_bound_progress_from_a_different_location(monkeypa
     async def report_progress(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="update_quest",
-                target_id="q1",
-                advance=True,
-                step="found an unusual private shipment in the cargo ledger",
-            )],
+            modifies=[
+                Modify(
+                    action="update_quest",
+                    target_id="q1",
+                    advance=True,
+                    step="found an unusual private shipment in the cargo ledger",
+                )
+            ],
             minutes=[10],
         )
 
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", inspect_trade_dock_ledger)
+    monkeypatch.setattr(
+        "src.engine.runtime.loop.flow_agent_turn", inspect_trade_dock_ledger
+    )
     monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_search)
     monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
 
@@ -1325,7 +1452,9 @@ def test_tick_rejects_location_bound_progress_from_a_different_location(monkeypa
         "contains family lineage records but no direct information about the Oak Circlet's hiding place or history",
     ],
 )
-def test_tick_rejects_search_progress_from_negative_clue_result(monkeypatch, negative_finding):
+def test_tick_rejects_search_progress_from_negative_clue_result(
+    monkeypatch, negative_finding
+):
     state = _state()
     quest = state.quests["q1"]
     quest.title = "The Oak Circlet"
@@ -1353,12 +1482,14 @@ def test_tick_rejects_search_progress_from_negative_clue_result(monkeypatch, neg
     async def report_progress(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="update_quest",
-                target_id="q1",
-                advance=True,
-                step=f"genealogy {negative_finding}",
-            )],
+            modifies=[
+                Modify(
+                    action="update_quest",
+                    target_id="q1",
+                    advance=True,
+                    step=f"genealogy {negative_finding}",
+                )
+            ],
             minutes=[15],
         )
 
@@ -1378,7 +1509,9 @@ def test_tick_binds_tool_to_scheduled_actor(monkeypatch):
     state.characters["ally"] = Character(id="ally", role="scout", location="tavern")
 
     async def choose_action(*_args):
-        return Speak(actor="ally", message="The wrong actor must not control this turn.")
+        return Speak(
+            actor="ally", message="The wrong actor must not control this turn."
+        )
 
     async def report_turn(*_args):
         return DMResult(creates=[], modifies=[], minutes=[1])
@@ -1388,7 +1521,10 @@ def test_tick_binds_tool_to_scheduled_actor(monkeypatch):
 
     asyncio.run(tick("hero", state, 0, logger=None))
 
-    assert state.history[-1].text == 'hero says: "The wrong actor must not control this turn."'
+    assert (
+        state.history[-1].text
+        == 'hero says: "The wrong actor must not control this turn."'
+    )
     assert state.history[-1].characters == ["hero"]
 
 
@@ -1465,7 +1601,9 @@ def test_tick_rejects_dm_removal_of_active_player_character(monkeypatch):
     async def remove_player(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(action="remove_npc", target_id="HERO", reason="Disappears.")],
+            modifies=[
+                Modify(action="remove_npc", target_id="HERO", reason="Disappears.")
+            ],
             minutes=[1],
         )
 
@@ -1486,12 +1624,14 @@ def test_tick_rejects_faction_clock_acceleration_for_travel(monkeypatch):
         id="encroaching-dawn",
         name="The Encroaching Dawn",
         goal="End the search before the curse can be broken",
-        clocks=[ProgressClock(
-            id="dawn-breaks",
-            name="Dawn breaks",
-            consequence="The curse becomes permanent.",
-            segments=6,
-        )],
+        clocks=[
+            ProgressClock(
+                id="dawn-breaks",
+                name="Dawn breaks",
+                consequence="The curse becomes permanent.",
+                segments=6,
+            )
+        ],
     )
 
     async def choose_travel(*_args):
@@ -1500,11 +1640,13 @@ def test_tick_rejects_faction_clock_acceleration_for_travel(monkeypatch):
     async def accelerate_dawn(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="advance_faction_clock",
-                target_id="encroaching-dawn",
-                other_id="dawn-breaks",
-            )],
+            modifies=[
+                Modify(
+                    action="advance_faction_clock",
+                    target_id="encroaching-dawn",
+                    other_id="dawn-breaks",
+                )
+            ],
             minutes=[10],
         )
 
@@ -1523,13 +1665,15 @@ def test_tick_rejects_event_acceleration_for_elapsed_time_deadline(monkeypatch):
         id="encroaching-dawn",
         name="The Encroaching Dawn",
         goal="End the search before the curse can be broken",
-        clocks=[ProgressClock(
-            id="dawn-breaks",
-            name="Dawn breaks",
-            consequence="The curse becomes permanent.",
-            segments=6,
-            event_acceleration=False,
-        )],
+        clocks=[
+            ProgressClock(
+                id="dawn-breaks",
+                name="Dawn breaks",
+                consequence="The curse becomes permanent.",
+                segments=6,
+                event_acceleration=False,
+            )
+        ],
     )
 
     async def discuss_search(*_args):
@@ -1538,11 +1682,13 @@ def test_tick_rejects_event_acceleration_for_elapsed_time_deadline(monkeypatch):
     async def accelerate_dawn(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="advance_faction_clock",
-                target_id="encroaching-dawn",
-                other_id="dawn-breaks",
-            )],
+            modifies=[
+                Modify(
+                    action="advance_faction_clock",
+                    target_id="encroaching-dawn",
+                    other_id="dawn-breaks",
+                )
+            ],
             minutes=[2],
         )
 
@@ -1566,12 +1712,14 @@ def test_tick_allows_event_acceleration_for_action_driven_clock(monkeypatch):
         id="crew",
         name="The Smuggler Crew",
         goal="Hide the evidence",
-        clocks=[ProgressClock(
-            id="retaliation",
-            name="Prepare retaliation",
-            consequence="The crew attacks.",
-            segments=4,
-        )],
+        clocks=[
+            ProgressClock(
+                id="retaliation",
+                name="Prepare retaliation",
+                consequence="The crew attacks.",
+                segments=4,
+            )
+        ],
     )
 
     async def confront_crew(*_args):
@@ -1584,11 +1732,13 @@ def test_tick_allows_event_acceleration_for_action_driven_clock(monkeypatch):
     async def accelerate_retaliation(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="advance_faction_clock",
-                target_id="crew",
-                other_id="retaliation",
-            )],
+            modifies=[
+                Modify(
+                    action="advance_faction_clock",
+                    target_id="crew",
+                    other_id="retaliation",
+                )
+            ],
             minutes=[2],
         )
 
@@ -1600,7 +1750,9 @@ def test_tick_allows_event_acceleration_for_action_driven_clock(monkeypatch):
     assert state.factions["crew"].clocks[0].progress == 1
 
 
-def test_tick_rejects_faction_acceleration_for_unobserved_evidence_discovery(monkeypatch):
+def test_tick_rejects_faction_acceleration_for_unobserved_evidence_discovery(
+    monkeypatch,
+):
     state = _state()
     logged_events = []
 
@@ -1612,12 +1764,14 @@ def test_tick_rejects_faction_acceleration_for_unobserved_evidence_discovery(mon
         id="black-hull-crew",
         name="The Black-Hull Crew",
         goal="Move contraband and silence witnesses",
-        clocks=[ProgressClock(
-            id="retaliation",
-            name="Prepare retaliation",
-            consequence="The crew attacks the village.",
-            segments=8,
-        )],
+        clocks=[
+            ProgressClock(
+                id="retaliation",
+                name="Prepare retaliation",
+                consequence="The crew attacks the village.",
+                segments=8,
+            )
+        ],
     )
 
     async def inspect_crate(*_args):
@@ -1635,11 +1789,13 @@ def test_tick_rejects_faction_acceleration_for_unobserved_evidence_discovery(mon
     async def accelerate_retaliation(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="advance_faction_clock",
-                target_id="black-hull-crew",
-                other_id="retaliation",
-            )],
+            modifies=[
+                Modify(
+                    action="advance_faction_clock",
+                    target_id="black-hull-crew",
+                    other_id="retaliation",
+                )
+            ],
             minutes=[5],
         )
 
@@ -1713,9 +1869,11 @@ def test_compound_final_objective_accepts_grounded_direct_confrontation():
         "confronted Captain Vess Rann about the weather",
     )
     unrelated_tool = tool.model_copy(update={"message": "Fine weather today."})
-    unrelated_event = event.model_copy(update={
-        "text": 'hero says to captain-vess-rann: "Fine weather today."',
-    })
+    unrelated_event = event.model_copy(
+        update={
+            "text": 'hero says to captain-vess-rann: "Fine weather today."',
+        }
+    )
     assert not _can_advance_final_objective(
         quest,
         unrelated_tool,
@@ -1753,7 +1911,9 @@ def test_compound_final_objective_matches_punctuated_target_initials():
     )
 
 
-def test_tick_completes_final_confrontation_with_punctuated_target_initials(monkeypatch):
+def test_tick_completes_final_confrontation_with_punctuated_target_initials(
+    monkeypatch,
+):
     state = _state()
     state.characters["vm"] = Character(id="vm", location="tavern")
     quest = state.quests["q1"]
@@ -1769,12 +1929,14 @@ def test_tick_completes_final_confrontation_with_punctuated_target_initials(monk
     async def report_confrontation(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="update_quest",
-                target_id="q1",
-                advance=True,
-                step="confronted V.M. with the ship's log—proof of stolen goods signed by her",
-            )],
+            modifies=[
+                Modify(
+                    action="update_quest",
+                    target_id="q1",
+                    advance=True,
+                    step="confronted V.M. with the ship's log—proof of stolen goods signed by her",
+                )
+            ],
             minutes=[2],
         )
 
@@ -1790,7 +1952,9 @@ def test_tick_completes_final_confrontation_with_punctuated_target_initials(monk
 
 def test_tick_completes_speech_final_objective_from_grounded_dm_step(monkeypatch):
     state = _state()
-    state.characters["captain-vess-rann"] = Character(id="captain-vess-rann", location="tavern")
+    state.characters["captain-vess-rann"] = Character(
+        id="captain-vess-rann", location="tavern"
+    )
     quest = state.quests["q1"]
     quest.plan = ["gather proof and confront or report the smugglers"]
 
@@ -1804,12 +1968,14 @@ def test_tick_completes_speech_final_objective_from_grounded_dm_step(monkeypatch
     async def report_confrontation(*_args):
         return DMResult(
             creates=[],
-            modifies=[Modify(
-                action="update_quest",
-                target_id="q1",
-                advance=True,
-                step="confronted Captain Vess Rann directly with proof from the ship's log and ledgers",
-            )],
+            modifies=[
+                Modify(
+                    action="update_quest",
+                    target_id="q1",
+                    advance=True,
+                    step="confronted Captain Vess Rann directly with proof from the ship's log and ledgers",
+                )
+            ],
             minutes=[2],
         )
 
@@ -1846,21 +2012,27 @@ def test_grounded_objective_fallback_requires_new_evidence_and_matching_location
     state = _state()
     state.quests["q1"].plan = ["search forest for clues"]
 
-    assert _advance_grounded_objective(
-        state,
-        "hero",
-        Action(actor="hero", description="search the tavern"),
-        [_event("hero learns: the cellar is damp.")],
-        {"q1": 0},
-    ) == []
+    assert (
+        _advance_grounded_objective(
+            state,
+            "hero",
+            Action(actor="hero", description="search the tavern"),
+            [_event("hero learns: the cellar is damp.")],
+            {"q1": 0},
+        )
+        == []
+    )
     state.quests["q1"].plan = ["search tavern for clues"]
-    assert _advance_grounded_objective(
-        state,
-        "hero",
-        Action(actor="hero", description="search the tavern"),
-        [_event("hero searches but finds nothing useful.")],
-        {"q1": 0},
-    ) == []
+    assert (
+        _advance_grounded_objective(
+            state,
+            "hero",
+            Action(actor="hero", description="search the tavern"),
+            [_event("hero searches but finds nothing useful.")],
+            {"q1": 0},
+        )
+        == []
+    )
     assert state.quests["q1"].current_step == 0
 
 
@@ -1869,13 +2041,16 @@ def test_grounded_objective_fallback_cannot_complete_from_final_clue_discovery()
     state.quests["q1"].plan = ["find clues in tavern"]
     event = _event("hero finds a clue in the tavern.")
 
-    assert _advance_grounded_objective(
-        state,
-        "hero",
-        Action(actor="hero", description="search the tavern"),
-        [event],
-        {"q1": 0},
-    ) == []
+    assert (
+        _advance_grounded_objective(
+            state,
+            "hero",
+            Action(actor="hero", description="search the tavern"),
+            [event],
+            {"q1": 0},
+        )
+        == []
+    )
     assert state.quests["q1"].current_step == 0
     assert state.quests["q1"].status == "active"
     assert state.characters["hero"].stats.xp == 0
@@ -1904,8 +2079,7 @@ def test_direct_final_resolution_bypasses_intermediate_objectives_without_their_
     assert quest.status == "completed"
     assert quest.current_step == len(quest.plan)
     assert quest.steps == [
-        f"{objective} — bypassed by direct resolution"
-        for objective in quest.plan[:-1]
+        f"{objective} — bypassed by direct resolution" for objective in quest.plan[:-1]
     ] + ["recover the Oak Circlet before dawn — resolved directly"]
     assert state.characters["hero"].stats.xp == 60
     assert "+60 XP to hero" in results[0]
@@ -1942,6 +2116,7 @@ def test_tick_completes_final_objective_when_dm_omits_quest_update(monkeypatch):
 
 
 # ============ CAMPAIGN OUTCOME ============
+
 
 def test_campaign_ends_in_victory_when_all_owned_quests_are_completed():
     state = _state()
@@ -1984,24 +2159,38 @@ def test_resumed_game_logs_next_world_turn_instead_of_restarting_at_one(monkeypa
         scenario = "demo"
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Continue it."}
 
-        def __init__(self, **_kwargs): pass
-        def latest_snapshot_name(self): return "world_state_7.json"
+        def __init__(self, **_kwargs):
+            pass
+
+        def latest_snapshot_name(self):
+            return "world_state_7.json"
+
         def load_state(self, snapshot):
             assert snapshot == "world_state_7.json"
             return state
-        def save_state(self, _state): pass
+
+        def save_state(self, _state):
+            pass
 
     class Log:
-        def __init__(self, **_kwargs): pass
-        def log_event(self, _event, **_kwargs): pass
-        def log_turn(self, turn): logged_turns.append(turn)
-        def close(self, **kwargs): closed.append(kwargs)
+        def __init__(self, **_kwargs):
+            pass
+
+        def log_event(self, _event, **_kwargs):
+            pass
+
+        def log_turn(self, turn):
+            logged_turns.append(turn)
+
+        def close(self, **kwargs):
+            closed.append(kwargs)
 
     async def complete_turn(_pc_id, _world, tick_index, _logger, _controller, _replay):
         tick_indexes.append(tick_index)
         return True
 
-    async def skip_compaction(*_args): pass
+    async def skip_compaction(*_args):
+        pass
 
     monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
     monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
@@ -2025,22 +2214,37 @@ def test_game_loop_stops_immediately_after_campaign_victory(monkeypatch):
         scenario = "demo"
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
-        def __init__(self, **_kwargs): pass
-        def init_state(self): return state
-        def latest_snapshot_name(self): return None
-        def save_state(self, _state): pass
+        def __init__(self, **_kwargs):
+            pass
+
+        def init_state(self):
+            return state
+
+        def latest_snapshot_name(self):
+            return None
+
+        def save_state(self, _state):
+            pass
 
     class Log:
-        def __init__(self, **_kwargs): pass
-        def log_event(self, event, **_kwargs): logged_events.append(event)
-        def log_turn(self, _turn): pass
-        def close(self, **_kwargs): pass
+        def __init__(self, **_kwargs):
+            pass
+
+        def log_event(self, event, **_kwargs):
+            logged_events.append(event)
+
+        def log_turn(self, _turn):
+            pass
+
+        def close(self, **_kwargs):
+            pass
 
     async def finish_quest(_pc_id, world, tick_index, _logger, _controller, _replay):
         ticks.append(tick_index)
         world.quests["q1"].status = "completed"
 
-    async def skip_compaction(*_args): pass
+    async def skip_compaction(*_args):
+        pass
 
     monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
     monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
@@ -2064,22 +2268,37 @@ def test_game_loop_records_pc_death_on_final_turn(monkeypatch):
         scenario = "demo"
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Survive it."}
 
-        def __init__(self, **_kwargs): pass
-        def init_state(self): return state
-        def latest_snapshot_name(self): return None
-        def save_state(self, _state): pass
+        def __init__(self, **_kwargs):
+            pass
+
+        def init_state(self):
+            return state
+
+        def latest_snapshot_name(self):
+            return None
+
+        def save_state(self, _state):
+            pass
 
     class Log:
-        def __init__(self, **_kwargs): pass
-        def log_event(self, event, **kwargs): logged_events.append((event, kwargs))
-        def log_turn(self, _turn): pass
-        def close(self, **kwargs): closed.append(kwargs)
+        def __init__(self, **_kwargs):
+            pass
+
+        def log_event(self, event, **kwargs):
+            logged_events.append((event, kwargs))
+
+        def log_turn(self, _turn):
+            pass
+
+        def close(self, **kwargs):
+            closed.append(kwargs)
 
     async def lethal_turn(_pc_id, world, _tick_index, _logger, _controller, _replay):
         world.characters["hero"].stats.hp = 0
         return True
 
-    async def skip_compaction(*_args): pass
+    async def skip_compaction(*_args):
+        pass
 
     monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
     monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
@@ -2092,7 +2311,9 @@ def test_game_loop_records_pc_death_on_final_turn(monkeypatch):
     assert closed == [{"turns_completed": 1}]
 
 
-def test_game_loop_records_provider_failure_without_persisting_partial_turn(monkeypatch):
+def test_game_loop_records_provider_failure_without_persisting_partial_turn(
+    monkeypatch,
+):
     state = _state()
     logged_events: list[tuple[str, dict]] = []
     saves: list[int] = []
@@ -2103,16 +2324,30 @@ def test_game_loop_records_provider_failure_without_persisting_partial_turn(monk
         scenario = "demo"
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
-        def __init__(self, **_kwargs): pass
-        def init_state(self): return state
-        def latest_snapshot_name(self): return None
-        def save_state(self, world): saves.append(world.time)
+        def __init__(self, **_kwargs):
+            pass
+
+        def init_state(self):
+            return state
+
+        def latest_snapshot_name(self):
+            return None
+
+        def save_state(self, world):
+            saves.append(world.time)
 
     class Log:
-        def __init__(self, **_kwargs): pass
-        def log_event(self, event, **kwargs): logged_events.append((event, kwargs))
-        def log_turn(self, _turn): pass
-        def close(self, **kwargs): closed.append(kwargs)
+        def __init__(self, **_kwargs):
+            pass
+
+        def log_event(self, event, **kwargs):
+            logged_events.append((event, kwargs))
+
+        def log_turn(self, _turn):
+            pass
+
+        def close(self, **kwargs):
+            closed.append(kwargs)
 
     async def fail_provider(*_args):
         raise ModelAPIError("anthropic", "Connection error")
@@ -2133,7 +2368,9 @@ def test_game_loop_records_provider_failure_without_persisting_partial_turn(monk
     assert closed == [{"turns_completed": 0}]
 
 
-def test_game_loop_records_retry_exhaustion_without_persisting_partial_turn(monkeypatch):
+def test_game_loop_records_retry_exhaustion_without_persisting_partial_turn(
+    monkeypatch,
+):
     state = _state()
     logged_events: list[tuple[str, dict]] = []
     saves: list[int] = []
@@ -2144,16 +2381,30 @@ def test_game_loop_records_retry_exhaustion_without_persisting_partial_turn(monk
         scenario = "demo"
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
-        def __init__(self, **_kwargs): pass
-        def init_state(self): return state
-        def latest_snapshot_name(self): return None
-        def save_state(self, world): saves.append(world.time)
+        def __init__(self, **_kwargs):
+            pass
+
+        def init_state(self):
+            return state
+
+        def latest_snapshot_name(self):
+            return None
+
+        def save_state(self, world):
+            saves.append(world.time)
 
     class Log:
-        def __init__(self, **_kwargs): pass
-        def log_event(self, event, **kwargs): logged_events.append((event, kwargs))
-        def log_turn(self, _turn): pass
-        def close(self, **kwargs): closed.append(kwargs)
+        def __init__(self, **_kwargs):
+            pass
+
+        def log_event(self, event, **kwargs):
+            logged_events.append((event, kwargs))
+
+        def log_turn(self, _turn):
+            pass
+
+        def close(self, **kwargs):
+            closed.append(kwargs)
 
     async def exhaust_retries(*_args):
         raise UnexpectedModelBehavior("Tool exceeded max retries count of 3")
@@ -2185,16 +2436,30 @@ def test_game_loop_logs_and_reraises_unexpected_post_turn_failure(monkeypatch):
         scenario = "demo"
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
-        def __init__(self, **_kwargs): pass
-        def init_state(self): return state
-        def latest_snapshot_name(self): return None
-        def save_state(self, world): saves.append(world.time)
+        def __init__(self, **_kwargs):
+            pass
+
+        def init_state(self):
+            return state
+
+        def latest_snapshot_name(self):
+            return None
+
+        def save_state(self, world):
+            saves.append(world.time)
 
     class Log:
-        def __init__(self, **_kwargs): pass
-        def log_event(self, event, **kwargs): logged_events.append((event, kwargs))
-        def log_turn(self, _turn): pass
-        def close(self, **kwargs): closed.append(kwargs)
+        def __init__(self, **_kwargs):
+            pass
+
+        def log_event(self, event, **kwargs):
+            logged_events.append((event, kwargs))
+
+        def log_turn(self, _turn):
+            pass
+
+        def close(self, **kwargs):
+            closed.append(kwargs)
 
     async def complete_turn(*_args):
         return True
@@ -2230,16 +2495,30 @@ def test_game_loop_does_not_persist_turn_without_character_action(monkeypatch):
         scenario = "demo"
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
-        def __init__(self, **_kwargs): pass
-        def init_state(self): return state
-        def latest_snapshot_name(self): return None
-        def save_state(self, world): saves.append(world.time)
+        def __init__(self, **_kwargs):
+            pass
+
+        def init_state(self):
+            return state
+
+        def latest_snapshot_name(self):
+            return None
+
+        def save_state(self, world):
+            saves.append(world.time)
 
     class Log:
-        def __init__(self, **_kwargs): pass
-        def log_event(self, event, **kwargs): logged_events.append((event, kwargs))
-        def log_turn(self, _turn): pass
-        def close(self, **kwargs): closed.append(kwargs)
+        def __init__(self, **_kwargs):
+            pass
+
+        def log_event(self, event, **kwargs):
+            logged_events.append((event, kwargs))
+
+        def log_turn(self, _turn):
+            pass
+
+        def close(self, **kwargs):
+            closed.append(kwargs)
 
     async def no_character_action(*_args):
         return None
@@ -2250,7 +2529,9 @@ def test_game_loop_does_not_persist_turn_without_character_action(monkeypatch):
     monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
     monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", no_character_action)
-    monkeypatch.setattr("src.engine.runtime.loop.compact_history", unexpected_compaction)
+    monkeypatch.setattr(
+        "src.engine.runtime.loop.compact_history", unexpected_compaction
+    )
 
     asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
 
@@ -2260,6 +2541,7 @@ def test_game_loop_does_not_persist_turn_without_character_action(monkeypatch):
 
 
 # ============ ESCALATION COUNTER ============
+
 
 def test_record_intervention_targets_known_quest():
     state = _state()

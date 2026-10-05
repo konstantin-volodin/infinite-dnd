@@ -18,7 +18,8 @@ def dm_context(deps) -> str:
     )
     quest_ids = sorted(state.quests.keys())
     quests = [
-        q for q in state.quests.values()
+        q
+        for q in state.quests.values()
         if str(getattr(q, "status", "active")).lower() not in ("completed", "failed")
     ]
     return render(
@@ -44,7 +45,8 @@ def director_context(deps) -> str:
     scene = state.locations.get(deps.location_id)
     recent_events = [e.text for e in state.history[-10:]]
     quests = [
-        q for q in state.quests.values()
+        q
+        for q in state.quests.values()
         if str(getattr(q, "status", "active")).lower() not in ("completed", "failed")
     ]
     present = sorted(

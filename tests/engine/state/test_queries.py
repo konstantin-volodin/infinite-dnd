@@ -18,8 +18,12 @@ def state() -> WorldState:
             "forest": Location(id="forest", connections=["tavern", "missing"]),
         },
         characters={
-            "elara-swift": Character(id="elara-swift", role="ranger", location="forest"),
-            "bram-the-bold": Character(id="bram-the-bold", role="fighter", location="tavern"),
+            "elara-swift": Character(
+                id="elara-swift", role="ranger", location="forest"
+            ),
+            "bram-the-bold": Character(
+                id="bram-the-bold", role="fighter", location="tavern"
+            ),
         },
     )
 
@@ -96,7 +100,10 @@ def test_resolve_location_id_rejects_ambiguous_partial_match(state):
 
 def test_characters_in_location(state):
     assert [c.id for c in characters_in_location(state, "tavern")] == ["bram-the-bold"]
-    assert characters_in_location(state, "tavern", exclude_character_id="bram-the-bold") == []
+    assert (
+        characters_in_location(state, "tavern", exclude_character_id="bram-the-bold")
+        == []
+    )
     assert characters_in_location(state, "nowhere") == []
 
 

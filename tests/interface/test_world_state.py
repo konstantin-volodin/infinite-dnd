@@ -2,14 +2,27 @@ import json
 
 import pytest
 
-from src.interface.world_state import format_clock, list_state_runs, list_ticks, load_view
+from src.interface.world_state import (
+    format_clock,
+    list_state_runs,
+    list_ticks,
+    load_view,
+)
 
 
 def _snapshot(tick: int, **overrides) -> dict:
     base = {
         "time": tick,
         "minutes_elapsed": 0,
-        "locations": {"tavern": {"id": "tavern", "description": "", "connections": [], "features": [], "items": []}},
+        "locations": {
+            "tavern": {
+                "id": "tavern",
+                "description": "",
+                "connections": [],
+                "features": [],
+                "items": [],
+            }
+        },
         "characters": {
             "hero": {
                 "id": "hero",
@@ -18,17 +31,29 @@ def _snapshot(tick: int, **overrides) -> dict:
                 "stats": {"hp": 5, "max_hp": 5, "level": 1, "xp": 0, "gold": 10},
             }
         },
-        "quests": {"find-it": {"id": "find-it", "title": "Find It", "description": "", "status": "active", "steps": []}},
+        "quests": {
+            "find-it": {
+                "id": "find-it",
+                "title": "Find It",
+                "description": "",
+                "status": "active",
+                "steps": [],
+            }
+        },
         "history": [],
     }
     base.update(overrides)
     return base
 
 
-def _write(tmp_path, scenario: str, tick: int, snapshot: dict, run_id: str = "run-1") -> None:
+def _write(
+    tmp_path, scenario: str, tick: int, snapshot: dict, run_id: str = "run-1"
+) -> None:
     run_dir = tmp_path / scenario / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / f"world_state_{tick}.json").write_text(json.dumps(snapshot), encoding="utf-8")
+    (run_dir / f"world_state_{tick}.json").write_text(
+        json.dumps(snapshot), encoding="utf-8"
+    )
 
 
 def test_list_ticks_sorted_numerically(tmp_path):
@@ -82,10 +107,28 @@ def test_diff_between_ticks(tmp_path):
         "inventory": ["sword", "lantern"],
         "stats": {"hp": 3, "max_hp": 5, "level": 1, "xp": 30, "gold": 5},
     }
-    second["characters"]["rat"] = {"id": "rat", "location": "cellar", "inventory": [], "stats": {"hp": 2, "max_hp": 2, "level": 1, "xp": 0, "gold": 0}}
+    second["characters"]["rat"] = {
+        "id": "rat",
+        "location": "cellar",
+        "inventory": [],
+        "stats": {"hp": 2, "max_hp": 2, "level": 1, "xp": 0, "gold": 0},
+    }
     second["quests"]["find-it"]["status"] = "completed"
-    second["locations"]["cellar"] = {"id": "cellar", "description": "", "connections": [], "features": [], "items": []}
-    second["history"] = [{"text": "hero descends", "location": "cellar", "characters": ["hero"], "minutes_elapsed": 5}]
+    second["locations"]["cellar"] = {
+        "id": "cellar",
+        "description": "",
+        "connections": [],
+        "features": [],
+        "items": [],
+    }
+    second["history"] = [
+        {
+            "text": "hero descends",
+            "location": "cellar",
+            "characters": ["hero"],
+            "minutes_elapsed": 5,
+        }
+    ]
     _write(tmp_path, "demo", 0, first)
     _write(tmp_path, "demo", 1, second)
 
@@ -108,12 +151,28 @@ def test_first_tick_has_no_changes(tmp_path):
 
 
 def test_history_clocks_accumulate(tmp_path):
-    snapshot = _snapshot(0, history=[
-        {"text": "a", "location": "tavern", "characters": [], "minutes_elapsed": 30},
-        {"text": "b", "location": "tavern", "characters": [], "minutes_elapsed": 1450},
-    ])
+    snapshot = _snapshot(
+        0,
+        history=[
+            {
+                "text": "a",
+                "location": "tavern",
+                "characters": [],
+                "minutes_elapsed": 30,
+            },
+            {
+                "text": "b",
+                "location": "tavern",
+                "characters": [],
+                "minutes_elapsed": 1450,
+            },
+        ],
+    )
     _write(tmp_path, "demo", 0, snapshot)
-    assert load_view(tmp_path, "demo", "run-1", 0)["history_clocks"] == ["day 1 · 00:30", "day 2 · 00:40"]
+    assert load_view(tmp_path, "demo", "run-1", 0)["history_clocks"] == [
+        "day 1 · 00:30",
+        "day 2 · 00:40",
+    ]
 
 
 def test_format_clock():

@@ -35,7 +35,9 @@ GAME_OUT_DIR = REPO / "logs" / "bench"
 def _fetch_props(port: int) -> dict | None:
     """Grab the server's self-reported model configuration once it is reachable."""
     try:
-        with urllib.request.urlopen(f"http://localhost:{port}/props", timeout=2) as response:
+        with urllib.request.urlopen(
+            f"http://localhost:{port}/props", timeout=2
+        ) as response:
             return json.load(response)
     except (OSError, ValueError):
         return None
@@ -45,7 +47,9 @@ def _gpu_memory_mb() -> int | None:
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return int(result.stdout.strip().splitlines()[0])
     except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
@@ -61,10 +65,14 @@ def _phase_rates(metrics: dict | None) -> dict:
     return {
         "prefill_tokens": int(metrics.get("prompt_tokens", 0)),
         "prefill_s": round(prefill_s, 1),
-        "prefill_tps": round(metrics.get("prompt_tokens", 0) / prefill_s, 1) if prefill_s else None,
+        "prefill_tps": round(metrics.get("prompt_tokens", 0) / prefill_s, 1)
+        if prefill_s
+        else None,
         "decode_tokens": int(metrics.get("predicted_tokens", 0)),
         "decode_s": round(decode_s, 1),
-        "decode_tps": round(metrics.get("predicted_tokens", 0) / decode_s, 1) if decode_s else None,
+        "decode_tps": round(metrics.get("predicted_tokens", 0) / decode_s, 1)
+        if decode_s
+        else None,
     }
 
 
@@ -74,9 +82,19 @@ def _session_stats(started: float) -> dict | None:
         if path.stat().st_mtime >= started:
             score = _score(load_session(path))
             keys = (
-                "file", "turns_completed", "agent_runs", "failed_resolutions",
-                "prefill_tps", "decode_tps", "prefill_s", "decode_s", "server_busy_s",
-                "cache_reused_runs", "timed_runs", "input_tokens", "output_tokens",
+                "file",
+                "turns_completed",
+                "agent_runs",
+                "failed_resolutions",
+                "prefill_tps",
+                "decode_tps",
+                "prefill_s",
+                "decode_s",
+                "server_busy_s",
+                "cache_reused_runs",
+                "timed_runs",
+                "input_tokens",
+                "output_tokens",
                 "output_tokens_per_s",
             )
             return {key: score[key] for key in keys}
@@ -84,11 +102,15 @@ def _session_stats(started: float) -> dict | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Benchmark a game run against the local llama-server.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark a game run against the local llama-server."
+    )
     parser.add_argument("--scenario", default="missing-brother")
     parser.add_argument("--turns", type=int, default=3)
     parser.add_argument("--profile", default=os.getenv("LLM_PROFILE", "default"))
-    parser.add_argument("--note", default="", help="Free-form tag stored with the record.")
+    parser.add_argument(
+        "--note", default="", help="Free-form tag stored with the record."
+    )
     args = parser.parse_args()
 
     profile_name, config = load_profile(args.profile)
@@ -97,13 +119,26 @@ def main() -> int:
     GAME_OUT_DIR.mkdir(parents=True, exist_ok=True)
     game_out = GAME_OUT_DIR / f"{stamp}_{profile_name}.out"
 
-    print(f"bench: profile={profile_name} scenario={args.scenario} turns={args.turns} (game output -> {game_out})", flush=True)
+    print(
+        f"bench: profile={profile_name} scenario={args.scenario} turns={args.turns} (game output -> {game_out})",
+        flush=True,
+    )
     started = time.time()
     with game_out.open("w", encoding="utf-8") as sink:
         process = subprocess.Popen(
-            ["uv", "run", "infinite-dnd", "--scenario", args.scenario, "--turns", str(args.turns)],
+            [
+                "uv",
+                "run",
+                "infinite-dnd",
+                "--scenario",
+                args.scenario,
+                "--turns",
+                str(args.turns),
+            ],
             env={**os.environ, "LLM_PROFILE": profile_name},
-            cwd=REPO, stdout=sink, stderr=subprocess.STDOUT,
+            cwd=REPO,
+            stdout=sink,
+            stderr=subprocess.STDOUT,
         )
         metrics = props = None
         max_vram = 0
@@ -128,7 +163,9 @@ def main() -> int:
         "max_vram_mb": max_vram or None,
         "config": config,
         "server": {
-            "model": Path(props["model_path"]).name if props and props.get("model_path") else None,
+            "model": Path(props["model_path"]).name
+            if props and props.get("model_path")
+            else None,
             "n_ctx": (props or {}).get("default_generation_settings", {}).get("n_ctx"),
             "total_slots": (props or {}).get("total_slots"),
         },
@@ -141,13 +178,21 @@ def main() -> int:
 
     phase = session or record["metrics"]
     print(f"\n=== bench result ({profile_name}) ===")
-    print(f"  exit {process.returncode}   wall {wall_s}s   peak vram {max_vram or '?'} MB")
+    print(
+        f"  exit {process.returncode}   wall {wall_s}s   peak vram {max_vram or '?'} MB"
+    )
     if phase:
-        print(f"  prefill {phase.get('prefill_tps')} tok/s over {phase.get('prefill_s')}s")
-        print(f"  decode  {phase.get('decode_tps')} tok/s over {phase.get('decode_s')}s")
+        print(
+            f"  prefill {phase.get('prefill_tps')} tok/s over {phase.get('prefill_s')}s"
+        )
+        print(
+            f"  decode  {phase.get('decode_tps')} tok/s over {phase.get('decode_s')}s"
+        )
     if session:
-        print(f"  kv-cache reuse {session['cache_reused_runs']}/{session['timed_runs']} runs"
-              f"   turns {session['turns_completed']}   log {session['file']}")
+        print(
+            f"  kv-cache reuse {session['cache_reused_runs']}/{session['timed_runs']} runs"
+            f"   turns {session['turns_completed']}   log {session['file']}"
+        )
     print(f"  appended to {BENCH_LOG.relative_to(REPO)}")
     return 0 if process.returncode == 0 else 1
 

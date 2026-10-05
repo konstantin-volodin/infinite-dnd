@@ -1,22 +1,55 @@
-from src.agents.dm.agent import ClockAdvance, NewEntity, QuestUpdate, RelationshipUpdate, DMResult, dm_output
+from src.agents.dm.agent import (
+    ClockAdvance,
+    NewEntity,
+    QuestUpdate,
+    RelationshipUpdate,
+    DMResult,
+    dm_output,
+)
 from src.agents.dm.tools import Create, Modify
 
 
 def test_dm_output_entities_filtered():
     entities = [
-        NewEntity(type="npc", name="Dockmaster Alan", description="a shady port official", location="docks", role="dockmaster"),
-        NewEntity(type="location", name="The Docks", description="busy port district", location="market-square"),
-        NewEntity(type="item", name="", description="nameless item — should be filtered"),
-        NewEntity(type="quest", name="Find the Vault", description="locate the cold-hearth vault", owner="alice", plan=["search the cellar", "find the vault key", "open the vault"]),
+        NewEntity(
+            type="npc",
+            name="Dockmaster Alan",
+            description="a shady port official",
+            location="docks",
+            role="dockmaster",
+        ),
+        NewEntity(
+            type="location",
+            name="The Docks",
+            description="busy port district",
+            location="market-square",
+        ),
+        NewEntity(
+            type="item", name="", description="nameless item — should be filtered"
+        ),
+        NewEntity(
+            type="quest",
+            name="Find the Vault",
+            description="locate the cold-hearth vault",
+            owner="alice",
+            plan=["search the cellar", "find the vault key", "open the vault"],
+        ),
     ]
     result = dm_output(None, entities, [], [], [], [])  # type: ignore[arg-type]
     assert isinstance(result, DMResult)
     assert len(result.creates) == 3  # empty-name filtered
     assert all(isinstance(t, Create) for t in result.creates)
     assert result.creates[0].type == "npc" and result.creates[0].role == "dockmaster"
-    assert result.creates[1].type == "location" and result.creates[1].location == "market-square"
+    assert (
+        result.creates[1].type == "location"
+        and result.creates[1].location == "market-square"
+    )
     assert result.creates[2].type == "quest" and result.creates[2].owner == "alice"
-    assert result.creates[2].plan == ["search the cellar", "find the vault key", "open the vault"]
+    assert result.creates[2].plan == [
+        "search the cellar",
+        "find the vault key",
+        "open the vault",
+    ]
 
 
 def test_dm_output_quest_updates_filtered():
@@ -50,9 +83,17 @@ def test_dm_output_quest_updates_filtered():
 
 def test_dm_output_relationship_updates_filtered():
     updates = [
-        RelationshipUpdate(character_id="hero", target_id="merchant", relation="grateful — she healed me"),
-        RelationshipUpdate(character_id="hero", target_id="bandit", relation=""),  # empty — dropped
-        RelationshipUpdate(character_id="hero", target_id="hero", relation="self-reflective"),  # self — dropped
+        RelationshipUpdate(
+            character_id="hero",
+            target_id="merchant",
+            relation="grateful — she healed me",
+        ),
+        RelationshipUpdate(
+            character_id="hero", target_id="bandit", relation=""
+        ),  # empty — dropped
+        RelationshipUpdate(
+            character_id="hero", target_id="hero", relation="self-reflective"
+        ),  # self — dropped
     ]
     result = dm_output(None, [], [], updates, [], [])  # type: ignore[arg-type]
     assert len(result.modifies) == 1
@@ -68,7 +109,9 @@ def test_dm_output_clock_advances_filtered():
     advances = [
         ClockAdvance(faction_id="black-hull-crew", clock_id="retaliation"),
         ClockAdvance(faction_id="", clock_id="retaliation"),  # empty faction — dropped
-        ClockAdvance(faction_id="black-hull-crew", clock_id=" "),  # blank clock — dropped
+        ClockAdvance(
+            faction_id="black-hull-crew", clock_id=" "
+        ),  # blank clock — dropped
     ]
     result = dm_output(None, [], [], [], advances, [])  # type: ignore[arg-type]
     assert len(result.modifies) == 1

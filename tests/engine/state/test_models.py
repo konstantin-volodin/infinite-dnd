@@ -21,7 +21,13 @@ def test_character_stats():
 
 
 def test_location():
-    loc = Location(id="forest-1", description="dark forest", connections=["village-1"], features=["cabin in the woods"], items=["sword"])
+    loc = Location(
+        id="forest-1",
+        description="dark forest",
+        connections=["village-1"],
+        features=["cabin in the woods"],
+        items=["sword"],
+    )
     assert loc.id == "forest-1"
     assert loc.connections == ["village-1"]
     assert loc.features == ["cabin in the woods"]
@@ -30,7 +36,13 @@ def test_location():
 
 def test_character():
     stats = CharacterStats(hp=20, max_hp=20, level=3)
-    char = Character(id="hero-1", role="warrior", inventory=["sword", "shield"], goal="slay the dragon", stats=stats)
+    char = Character(
+        id="hero-1",
+        role="warrior",
+        inventory=["sword", "shield"],
+        goal="slay the dragon",
+        stats=stats,
+    )
     assert char.id == "hero-1"
     assert char.role == "warrior"
     assert char.stats.hp == 20
@@ -40,7 +52,9 @@ def test_character():
 
 def test_quest():
     char = Character(id="hero-1", role="warrior")
-    quest = Quest(id="q1", title="Slay Dragon", description="defeat the dragon", owner=char.id)
+    quest = Quest(
+        id="q1", title="Slay Dragon", description="defeat the dragon", owner=char.id
+    )
     assert quest.status == "active"
     assert quest.owner == "hero-1"
     assert quest.description == "defeat the dragon"
@@ -51,7 +65,12 @@ def test_quest():
 
 
 def test_quest_with_plan():
-    quest = Quest(id="q2", title="Slay Dragon", description="defeat the dragon", plan=["find the lair", "slay the dragon"])
+    quest = Quest(
+        id="q2",
+        title="Slay Dragon",
+        description="defeat the dragon",
+        plan=["find the lair", "slay the dragon"],
+    )
     assert quest.plan == ["find the lair", "slay the dragon"]
     assert quest.current_step == 0
 
@@ -104,23 +123,47 @@ def test_planned_quest_rejects_blank_objectives(blank_objective):
 
 
 def test_world_state():
-    loc = Location(id="forest-1", description="dark forest", connections=["village-1"], features=["cabin in the woods"], items=["sword"])
+    loc = Location(
+        id="forest-1",
+        description="dark forest",
+        connections=["village-1"],
+        features=["cabin in the woods"],
+        items=["sword"],
+    )
     stats = CharacterStats(hp=20, max_hp=20, level=3)
-    char = Character(id="hero-1", role="warrior", inventory=["sword", "shield"], goal="slay the dragon", stats=stats)
-    quest = Quest(id="q1", title="Slay Dragon", description="defeat the dragon", owner=char.id)
+    char = Character(
+        id="hero-1",
+        role="warrior",
+        inventory=["sword", "shield"],
+        goal="slay the dragon",
+        stats=stats,
+    )
+    quest = Quest(
+        id="q1", title="Slay Dragon", description="defeat the dragon", owner=char.id
+    )
 
     world = WorldState(
         time=0,
         locations={"forest-1": loc},
         characters={"hero-1": char},
         quests={"q1": quest},
-        history=[HistoryEvent(text="Hero enters the forest", location="forest-1", characters=["hero-1"])]
+        history=[
+            HistoryEvent(
+                text="Hero enters the forest",
+                location="forest-1",
+                characters=["hero-1"],
+            )
+        ],
     )
     assert world.time == 0
     assert world.locations == {"forest-1": loc}
     assert world.characters == {"hero-1": char}
     assert world.quests == {"q1": quest}
-    assert world.history == [HistoryEvent(text="Hero enters the forest", location="forest-1", characters=["hero-1"])]
+    assert world.history == [
+        HistoryEvent(
+            text="Hero enters the forest", location="forest-1", characters=["hero-1"]
+        )
+    ]
 
 
 def test_world_state_chronicle_defaults_empty_and_round_trips():
@@ -128,12 +171,21 @@ def test_world_state_chronicle_defaults_empty_and_round_trips():
     assert world.chronicle == []
 
     world.chronicle.append("Long ago, the hero entered the forest.")
-    assert WorldState.model_validate(world.model_dump()).chronicle == ["Long ago, the hero entered the forest."]
+    assert WorldState.model_validate(world.model_dump()).chronicle == [
+        "Long ago, the hero entered the forest."
+    ]
 
 
 def test_faction_clock_round_trips_with_world_state():
-    clock = ProgressClock(id="raid", name="Prepare raid", consequence="The village is attacked.", segments=4)
-    faction = Faction(id="wolves", name="The Wolves", goal="Take the valley", clocks=[clock])
+    clock = ProgressClock(
+        id="raid",
+        name="Prepare raid",
+        consequence="The village is attacked.",
+        segments=4,
+    )
+    faction = Faction(
+        id="wolves", name="The Wolves", goal="Take the valley", clocks=[clock]
+    )
     world = WorldState(factions={faction.id: faction})
 
     loaded = WorldState.model_validate(world.model_dump())
@@ -151,7 +203,9 @@ def test_faction_clock_quest_link_is_optional_and_must_resolve():
         segments=4,
         fail_quest_id="defend",
     )
-    faction = Faction(id="wolves", name="The Wolves", goal="Take the valley", clocks=[clock])
+    faction = Faction(
+        id="wolves", name="The Wolves", goal="Take the valley", clocks=[clock]
+    )
 
     world = WorldState(quests={quest.id: quest}, factions={faction.id: faction})
     assert world.factions["wolves"].clocks[0].fail_quest_id == "defend"
@@ -172,7 +226,9 @@ def test_triggered_faction_clock_requires_linked_quest_to_be_failed(status):
         consequence_triggered=True,
         fail_quest_id=quest.id,
     )
-    faction = Faction(id="wolves", name="The Wolves", goal="Take the valley", clocks=[clock])
+    faction = Faction(
+        id="wolves", name="The Wolves", goal="Take the valley", clocks=[clock]
+    )
 
     with pytest.raises(
         ValidationError,
@@ -252,14 +308,18 @@ def test_character_stats_reject_hp_above_maximum():
         CharacterStats(hp=6, max_hp=5)
 
 
-@pytest.mark.parametrize("field", ["time", "minutes_elapsed", "last_quest_advance_time"])
+@pytest.mark.parametrize(
+    "field", ["time", "minutes_elapsed", "last_quest_advance_time"]
+)
 def test_world_state_rejects_negative_clocks(field):
     with pytest.raises(ValidationError):
         WorldState.model_validate({field: -1})
 
 
 def test_world_state_rejects_future_quest_advance_time():
-    with pytest.raises(ValidationError, match="last_quest_advance_time cannot exceed time"):
+    with pytest.raises(
+        ValidationError, match="last_quest_advance_time cannot exceed time"
+    ):
         WorldState(time=4, last_quest_advance_time=5)
 
 
@@ -274,12 +334,20 @@ def test_faction_requires_clock_and_clock_rejects_invalid_progress():
     with pytest.raises(ValidationError):
         Faction(id="empty", name="Empty", goal="Nothing", clocks=[])
     with pytest.raises(ValidationError, match="progress cannot exceed segments"):
-        ProgressClock(id="clock", name="Clock", consequence="Trouble.", progress=3, segments=2)
-    with pytest.raises(ValidationError, match="completed clock must trigger its consequence"):
-        ProgressClock(id="clock", name="Clock", consequence="Trouble.", progress=2, segments=2)
+        ProgressClock(
+            id="clock", name="Clock", consequence="Trouble.", progress=3, segments=2
+        )
+    with pytest.raises(
+        ValidationError, match="completed clock must trigger its consequence"
+    ):
+        ProgressClock(
+            id="clock", name="Clock", consequence="Trouble.", progress=2, segments=2
+        )
     with pytest.raises(ValidationError):
         ProgressClock(id="clock", name="Clock", consequence="", segments=2)
-    with pytest.raises(ValidationError, match="clock ids must be unique after normalization"):
+    with pytest.raises(
+        ValidationError, match="clock ids must be unique after normalization"
+    ):
         Faction(
             id="duplicates",
             name="Duplicates",
@@ -292,26 +360,36 @@ def test_faction_requires_clock_and_clock_rejects_invalid_progress():
 
 
 def test_faction_rejects_slug_equivalent_clock_ids():
-    with pytest.raises(ValidationError, match="clock ids must be unique after normalization"):
+    with pytest.raises(
+        ValidationError, match="clock ids must be unique after normalization"
+    ):
         Faction(
             id="ambiguous",
             name="Ambiguous",
             goal="Confuse clock updates",
             clocks=[
-                ProgressClock(id="secret-haul", name="First", consequence="One.", segments=2),
-                ProgressClock(id="SECRET HAUL", name="Second", consequence="Two.", segments=2),
+                ProgressClock(
+                    id="secret-haul", name="First", consequence="One.", segments=2
+                ),
+                ProgressClock(
+                    id="SECRET HAUL", name="Second", consequence="Two.", segments=2
+                ),
             ],
         )
 
 
 def test_faction_rejects_clock_id_without_letters_or_numbers():
-    with pytest.raises(ValidationError, match="clock ids must contain a letter or number"):
+    with pytest.raises(
+        ValidationError, match="clock ids must contain a letter or number"
+    ):
         Faction(
             id="valid-faction",
             name="Invalid Clock",
             goal="Become impossible to update",
             clocks=[
-                ProgressClock(id="!!!", name="Broken", consequence="Trouble.", segments=2),
+                ProgressClock(
+                    id="!!!", name="Broken", consequence="Trouble.", segments=2
+                ),
             ],
         )
 
@@ -346,7 +424,9 @@ def test_faction_rejects_clock_id_without_letters_or_numbers():
     ],
 )
 def test_world_state_rejects_slug_equivalent_entity_ids(field, entity_name, entities):
-    with pytest.raises(ValidationError, match=rf"{entity_name} ids must be unique after normalization"):
+    with pytest.raises(
+        ValidationError, match=rf"{entity_name} ids must be unique after normalization"
+    ):
         WorldState(**{field: entities})
 
 
@@ -375,8 +455,12 @@ def test_world_state_rejects_slug_equivalent_entity_ids(field, entity_name, enti
         ),
     ],
 )
-def test_world_state_rejects_entity_ids_without_letters_or_numbers(field, entity_name, entity):
-    with pytest.raises(ValidationError, match=rf"{entity_name} ids must contain a letter or number"):
+def test_world_state_rejects_entity_ids_without_letters_or_numbers(
+    field, entity_name, entity
+):
+    with pytest.raises(
+        ValidationError, match=rf"{entity_name} ids must contain a letter or number"
+    ):
         WorldState(**{field: {entity.id: entity}})
 
 
@@ -419,15 +503,23 @@ def test_world_state_rejects_slug_equivalent_faction_ids():
             id="ash-guild",
             name="First Guild",
             goal="Control the harbor",
-            clocks=[ProgressClock(id="raid", name="Raid", consequence="One.", segments=2)],
+            clocks=[
+                ProgressClock(id="raid", name="Raid", consequence="One.", segments=2)
+            ],
         ),
         "ASH GUILD": Faction(
             id="ASH GUILD",
             name="Second Guild",
             goal="Control the roads",
-            clocks=[ProgressClock(id="blockade", name="Blockade", consequence="Two.", segments=2)],
+            clocks=[
+                ProgressClock(
+                    id="blockade", name="Blockade", consequence="Two.", segments=2
+                )
+            ],
         ),
     }
 
-    with pytest.raises(ValidationError, match="faction ids must be unique after normalization"):
+    with pytest.raises(
+        ValidationError, match="faction ids must be unique after normalization"
+    ):
         WorldState(factions=factions)

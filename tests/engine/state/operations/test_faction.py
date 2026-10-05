@@ -77,7 +77,9 @@ def test_hourly_advance_moves_one_segment_per_hour_crossed():
     operations.advance_faction_clocks_hourly(59, 61)
     assert state.factions["guild"].clocks[0].progress == 1
 
-    operations.advance_faction_clocks_hourly(61, 240)  # a long rest crosses several hours at once
+    operations.advance_faction_clocks_hourly(
+        61, 240
+    )  # a long rest crosses several hours at once
     assert state.factions["guild"].clocks[0].progress == 4
 
 

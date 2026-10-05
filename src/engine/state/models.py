@@ -41,9 +41,9 @@ class Location(BaseModel):
 
 class Character(BaseModel):
     id: str
-    role: str = "" 
+    role: str = ""
     backstory: str = ""
-    personality: str = "" 
+    personality: str = ""
     goal: str = ""
     location: str = ""
     relationships: Dict[str, str] = Field(default_factory=dict)
@@ -65,9 +65,15 @@ class Quest(BaseModel):
     description: str = ""
     status: str = "active"
     owner: str = ""
-    plan: List[str] = Field(default_factory=list)  # ordered, concrete objectives set at creation
-    current_step: int = Field(default=0, ge=0)  # index into plan of the current objective
-    steps: List[str] = Field(default_factory=list)  # progress log — accomplished objectives + notes
+    plan: List[str] = Field(
+        default_factory=list
+    )  # ordered, concrete objectives set at creation
+    current_step: int = Field(
+        default=0, ge=0
+    )  # index into plan of the current objective
+    steps: List[str] = Field(
+        default_factory=list
+    )  # progress log — accomplished objectives + notes
 
     @model_validator(mode="after")
     def status_is_canonical(self) -> "Quest":
@@ -79,7 +85,9 @@ class Quest(BaseModel):
 
         # Older agents sometimes wrote a progress description into `status`.
         # Keep that information as a note while restoring lifecycle semantics.
-        if status and not any(status.casefold() in step.casefold() for step in self.steps):
+        if status and not any(
+            status.casefold() in step.casefold() for step in self.steps
+        ):
             self.steps.append(status)
         self.status = "active"
         return self
@@ -136,21 +144,29 @@ class Faction(BaseModel):
         if any(not clock_id for clock_id in clock_ids):
             raise ValueError("clock ids must contain a letter or number")
         if len(clock_ids) != len(set(clock_ids)):
-            raise ValueError("clock ids must be unique after normalization within a faction")
+            raise ValueError(
+                "clock ids must be unique after normalization within a faction"
+            )
         return self
 
 
 class WorldState(BaseModel):
     time: int = Field(default=0, ge=0)
     minutes_elapsed: int = Field(default=0, ge=0)
-    last_quest_advance_time: int = Field(default=0, ge=0)  # tick of the most recent quest advancement — stall detection
-    director_interventions: Dict[str, int] = Field(default_factory=dict)  # quest id (or "world") → director beat count
+    last_quest_advance_time: int = Field(
+        default=0, ge=0
+    )  # tick of the most recent quest advancement — stall detection
+    director_interventions: Dict[str, int] = Field(
+        default_factory=dict
+    )  # quest id (or "world") → director beat count
     locations: Dict[str, Location] = Field(default_factory=dict)
     characters: Dict[str, Character] = Field(default_factory=dict)
     quests: Dict[str, Quest] = Field(default_factory=dict)
     factions: Dict[str, Faction] = Field(default_factory=dict)
     history: List[HistoryEvent] = Field(default_factory=list)
-    chronicle: List[str] = Field(default_factory=list)  # compact era summaries of history archived by compaction
+    chronicle: List[str] = Field(
+        default_factory=list
+    )  # compact era summaries of history archived by compaction
 
     @model_validator(mode="after")
     def quest_advance_time_is_not_in_the_future(self) -> "WorldState":
@@ -177,7 +193,9 @@ class WorldState(BaseModel):
             if any(not entity_id for entity_id in normalized_ids):
                 raise ValueError(f"{entity_name} ids must contain a letter or number")
             if len(normalized_ids) != len(set(normalized_ids)):
-                raise ValueError(f"{entity_name} ids must be unique after normalization")
+                raise ValueError(
+                    f"{entity_name} ids must be unique after normalization"
+                )
         for character in self.characters.values():
             if character.location and character.location not in self.locations:
                 raise ValueError(

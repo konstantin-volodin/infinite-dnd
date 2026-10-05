@@ -61,16 +61,21 @@ def resolve_check(
 
 def get_health_status(character: object) -> str:
     """Return a health status string based on current hp percentage."""
-    if not isinstance(character, Character) or not isinstance(character.stats, CharacterStats):
+    if not isinstance(character, Character) or not isinstance(
+        character.stats, CharacterStats
+    ):
         return "unknown"
 
     hp = character.stats.hp
     max_hp = character.stats.max_hp
     pct = (hp / max_hp) * 100 if max_hp else 0
 
-    if hp <= 0: return "dead"
-    if pct <= 25: return "critical"
-    if pct <= 50: return "injured"
+    if hp <= 0:
+        return "dead"
+    if pct <= 25:
+        return "critical"
+    if pct <= 50:
+        return "injured"
     return "healthy"
 
 

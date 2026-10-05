@@ -8,7 +8,16 @@ recording) doesn't need to know a human is behind the wheel.
 import asyncio
 from typing import cast
 
-from src.agents.character.tools import Ability, Action, Attack, CharacterTool, Check, Speak, Travel, Wait
+from src.agents.character.tools import (
+    Ability,
+    Action,
+    Attack,
+    CharacterTool,
+    Check,
+    Speak,
+    Travel,
+    Wait,
+)
 from src.engine.rules import get_health_status
 from src.engine.state import (
     WorldState,
@@ -21,19 +30,32 @@ from src.engine.state import (
 
 _HELP = "Type a plain sentence to act, or: /check <ability> <DC> <action> [vs <character>] | /speak ... | /travel ... | /attack ... | /wait"
 
-_ABILITIES: set[str] = {"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
+_ABILITIES: set[str] = {
+    "strength",
+    "dexterity",
+    "constitution",
+    "intelligence",
+    "wisdom",
+    "charisma",
+}
 
 
 class _InputError(ValueError):
     """A malformed or unresolvable command — caller prints it and reprompts."""
 
 
-def _describe_situation(actor_id: str, state: WorldState, *, include_help: bool = True) -> str:
+def _describe_situation(
+    actor_id: str, state: WorldState, *, include_help: bool = True
+) -> str:
     char = state.characters[actor_id]
     loc = state.locations.get(char.location)
     lines = [f"\n=== Your turn: {actor_id} ==="]
     if loc:
-        lines.append(f"Location: {loc.id} — {loc.description}" if loc.description else f"Location: {loc.id}")
+        lines.append(
+            f"Location: {loc.id} — {loc.description}"
+            if loc.description
+            else f"Location: {loc.id}"
+        )
         if loc.items:
             lines.append(f"Items here: {', '.join(loc.items)}")
     lines.append(
@@ -44,8 +66,10 @@ def _describe_situation(actor_id: str, state: WorldState, *, include_help: bool 
         lines.append(f"Goal: {char.goal}")
 
     active_quests = [
-        quest for quest in state.quests.values()
-        if quest.owner == actor_id and quest.status.lower() not in {"completed", "failed"}
+        quest
+        for quest in state.quests.values()
+        if quest.owner == actor_id
+        and quest.status.lower() not in {"completed", "failed"}
     ]
     for quest in active_quests:
         objective = (
@@ -67,9 +91,13 @@ def _describe_situation(actor_id: str, state: WorldState, *, include_help: bool 
     if witnessed:
         lines.append(f"Just happened: {witnessed[-1]}")
 
-    present = characters_in_location(state, char.location, exclude_character_id=actor_id)
+    present = characters_in_location(
+        state, char.location, exclude_character_id=actor_id
+    )
     if present:
-        lines.append("Present: " + ", ".join(f"{c.id} ({get_health_status(c)})" for c in present))
+        lines.append(
+            "Present: " + ", ".join(f"{c.id} ({get_health_status(c)})" for c in present)
+        )
 
     connections = connected_location_ids(state, char.location)
     if connections:
@@ -133,8 +161,11 @@ def _parse_intent(actor_id: str, state: WorldState, line: str) -> CharacterTool:
             opponent_id = opponent.id
         try:
             return Check(
-                actor=actor_id, ability=cast(Ability, parts[0].lower()), difficulty=difficulty,
-                description=description.strip(), opponent=opponent_id,
+                actor=actor_id,
+                ability=cast(Ability, parts[0].lower()),
+                difficulty=difficulty,
+                description=description.strip(),
+                opponent=opponent_id,
             )
         except ValueError as exc:
             raise _InputError("Check DC must be a number from 1 to 30.") from exc

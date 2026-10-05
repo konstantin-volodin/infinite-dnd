@@ -12,23 +12,36 @@ from src.engine.state.models import (
     Quest,
     WorldState,
 )
-from src.interface.player import _describe_situation, _parse_intent, _InputError, console_pc_controller
+from src.interface.player import (
+    _describe_situation,
+    _parse_intent,
+    _InputError,
+    console_pc_controller,
+)
 
 
 def _state() -> WorldState:
     return WorldState(
         locations={
-            "tavern": Location(id="tavern", description="A dim tavern.", connections=["square"], items=["lantern"]),
+            "tavern": Location(
+                id="tavern",
+                description="A dim tavern.",
+                connections=["square"],
+                items=["lantern"],
+            ),
             "square": Location(id="square", description="The town square."),
         },
         characters={
-            "hero": Character(id="hero", role="warrior", location="tavern", inventory=["sword"]),
+            "hero": Character(
+                id="hero", role="warrior", location="tavern", inventory=["sword"]
+            ),
             "bob": Character(id="bob", role="bartender", location="tavern"),
         },
     )
 
 
 # ============ free-text default ============
+
 
 def test_plain_text_becomes_action():
     intent = _parse_intent("hero", _state(), "search the bar for clues")
@@ -41,6 +54,7 @@ def test_blank_input_reprompts():
 
 
 # ============ slash commands ============
+
 
 def test_wait_command():
     assert _parse_intent("hero", _state(), "/wait") == Wait(actor="hero")
@@ -72,15 +86,22 @@ def test_attack_command_rejects_unknown_target():
 
 
 def test_check_command_with_dc():
-    assert _parse_intent("hero", _state(), "/check dexterity 14 pick the lock") == Check(
+    assert _parse_intent(
+        "hero", _state(), "/check dexterity 14 pick the lock"
+    ) == Check(
         actor="hero", ability="dexterity", difficulty=14, description="pick the lock"
     )
 
 
 def test_contested_check_command_resolves_opponent():
-    assert _parse_intent("hero", _state(), "/check charisma 10 bluff convincingly vs bob") == Check(
-        actor="hero", ability="charisma", difficulty=10,
-        description="bluff convincingly", opponent="bob",
+    assert _parse_intent(
+        "hero", _state(), "/check charisma 10 bluff convincingly vs bob"
+    ) == Check(
+        actor="hero",
+        ability="charisma",
+        difficulty=10,
+        description="bluff convincingly",
+        opponent="bob",
     )
 
 
@@ -106,6 +127,7 @@ def test_unknown_command_reprompts():
 
 # ============ situation summary ============
 
+
 def test_describe_situation_includes_key_facts():
     text = _describe_situation("hero", _state())
     assert "tavern" in text
@@ -124,23 +146,27 @@ def test_describe_situation_frames_the_players_next_choice():
         owner="hero",
         plan=["question the bartender", "search the square"],
     )
-    state.history.append(HistoryEvent(
-        text='bob whispers: "I saw someone run toward the square."',
-        location="tavern",
-        characters=["hero", "bob"],
-    ))
+    state.history.append(
+        HistoryEvent(
+            text='bob whispers: "I saw someone run toward the square."',
+            location="tavern",
+            characters=["hero", "bob"],
+        )
+    )
     state.factions["night"] = Faction(
         id="night",
         name="The Coming Night",
         goal="Let the trail go cold",
-        clocks=[ProgressClock(
-            id="sunset",
-            name="Sunset",
-            consequence="The thief escapes with the lantern.",
-            segments=4,
-            progress=1,
-            fail_quest_id="missing-light",
-        )],
+        clocks=[
+            ProgressClock(
+                id="sunset",
+                name="Sunset",
+                consequence="The thief escapes with the lantern.",
+                segments=4,
+                progress=1,
+                fail_quest_id="missing-light",
+            )
+        ],
     )
 
     text = _describe_situation("hero", state)
@@ -159,11 +185,13 @@ def test_describe_situation_hides_other_characters_quests_and_unwitnessed_events
         description="Do not show this to the hero.",
         owner="bob",
     )
-    state.history.append(HistoryEvent(
-        text="bob hides a key in the cellar.",
-        location="tavern",
-        characters=["bob"],
-    ))
+    state.history.append(
+        HistoryEvent(
+            text="bob hides a key in the cellar.",
+            location="tavern",
+            characters=["bob"],
+        )
+    )
 
     text = _describe_situation("hero", state)
 
@@ -172,6 +200,7 @@ def test_describe_situation_hides_other_characters_quests_and_unwitnessed_events
 
 
 # ============ console controller loop ============
+
 
 def test_console_controller_reprompts_on_invalid_input(monkeypatch, capsys):
     lines = iter(["", "/travel nowhere", "/wait"])

@@ -12,19 +12,45 @@ from src.interface.session_log import Logger, _digest_message, list_logs, load_s
 
 
 def _write_session(tmp_path) -> None:
-    logger = Logger(character_id="hero", max_turns=3, scenario="demo", scenario_title="Demo Quest", log_dir=tmp_path)
+    logger = Logger(
+        character_id="hero",
+        max_turns=3,
+        scenario="demo",
+        scenario_title="Demo Quest",
+        log_dir=tmp_path,
+    )
     logger.log_turn(1)
     with logger.run("character:hero"):
-        logger.log_messages("character:hero", [
-            ModelRequest(parts=[SystemPromptPart(content="you are hero"), UserPromptPart(content="act")]),
-            ModelResponse(
-                parts=[ToolCallPart(tool_name="speak", args='{"message": "hi"}', tool_call_id="t1")],
-                usage=RequestUsage(input_tokens=10, output_tokens=5),
-                model_name="test-model",
-            ),
-            ModelRequest(parts=[ToolReturnPart(tool_name="speak", content="ok", tool_call_id="t1")]),
-        ])
-    logger.log_event("resolved", tool="Speak", subject="hero", result="hero says: \"hi\"")
+        logger.log_messages(
+            "character:hero",
+            [
+                ModelRequest(
+                    parts=[
+                        SystemPromptPart(content="you are hero"),
+                        UserPromptPart(content="act"),
+                    ]
+                ),
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name="speak",
+                            args='{"message": "hi"}',
+                            tool_call_id="t1",
+                        )
+                    ],
+                    usage=RequestUsage(input_tokens=10, output_tokens=5),
+                    model_name="test-model",
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="speak", content="ok", tool_call_id="t1"
+                        )
+                    ]
+                ),
+            ],
+        )
+    logger.log_event("resolved", tool="Speak", subject="hero", result='hero says: "hi"')
     logger.close()
 
 
@@ -43,7 +69,7 @@ def test_roundtrip(tmp_path):
     assert session["stats"]["llm_message_count"] == 3
     assert session["stats"]["error_count"] == 0
 
-    run, = session["runs"]
+    (run,) = session["runs"]
     assert run["label"] == "character:hero"
     assert run["tool_calls"] == ["speak"]
     assert run["tokens"] == {"input_tokens": 10, "output_tokens": 5}
@@ -56,7 +82,9 @@ def test_roundtrip(tmp_path):
     assert finished["raw"]["output_tokens_per_s"] > 0
     assert "output tok/s" in finished["summary"]
 
-    request, response, tool_return = [e for e in session["entries"] if e["event"] == "llm_message"]
+    request, response, tool_return = [
+        e for e in session["entries"] if e["event"] == "llm_message"
+    ]
     assert request["message_kind"] == "model_request"
     assert "you are hero" in request["raw_pretty"]
     assert response["message_kind"] == "model_response"
@@ -69,10 +97,22 @@ def test_roundtrip(tmp_path):
 def test_logger_records_prefill_decode_split(tmp_path):
     # Simulates llama-server /metrics counters advancing across one run:
     # 600 prompt tokens in 6s (prefill) and 40 generated tokens in 5s (decode).
-    snapshots = iter([
-        {"prompt_tokens": 1000.0, "prompt_seconds": 10.0, "predicted_tokens": 200.0, "predicted_seconds": 20.0},
-        {"prompt_tokens": 1600.0, "prompt_seconds": 16.0, "predicted_tokens": 240.0, "predicted_seconds": 25.0},
-    ])
+    snapshots = iter(
+        [
+            {
+                "prompt_tokens": 1000.0,
+                "prompt_seconds": 10.0,
+                "predicted_tokens": 200.0,
+                "predicted_seconds": 20.0,
+            },
+            {
+                "prompt_tokens": 1600.0,
+                "prompt_seconds": 16.0,
+                "predicted_tokens": 240.0,
+                "predicted_seconds": 25.0,
+            },
+        ]
+    )
     logger = Logger(
         character_id="hero",
         max_turns=1,
@@ -85,24 +125,30 @@ def test_logger_records_prefill_decode_split(tmp_path):
     logger.close()
 
     session = load_session(list_logs(tmp_path)[0]["path"])
-    run, = session["runs"]
+    (run,) = session["runs"]
     assert run["timings"] == {
-        "prefill_tokens": 600, "prefill_s": 6.0, "prefill_tps": 100.0,
-        "decode_tokens": 40, "decode_s": 5.0, "decode_tps": 8.0,
+        "prefill_tokens": 600,
+        "prefill_s": 6.0,
+        "prefill_tps": 100.0,
+        "decode_tokens": 40,
+        "decode_s": 5.0,
+        "decode_tps": 8.0,
     }
     finished = next(e for e in session["entries"] if e["event"] == "agent_run_finished")
     assert "prefill 100.0 tok/s · decode 8.0 tok/s" in finished["summary"]
 
 
 def test_logger_omits_split_when_server_unreachable(tmp_path):
-    logger = Logger(character_id="hero", max_turns=1, log_dir=tmp_path, metrics_reader=lambda: None)
+    logger = Logger(
+        character_id="hero", max_turns=1, log_dir=tmp_path, metrics_reader=lambda: None
+    )
     logger.log_turn(1)
     with logger.run("character:hero"):
         pass
     logger.close()
 
     session = load_session(list_logs(tmp_path)[0]["path"])
-    run, = session["runs"]
+    (run,) = session["runs"]
     assert run["timings"] is None
     finished = next(e for e in session["entries"] if e["event"] == "agent_run_finished")
     assert "prefill" not in finished["raw"]
@@ -130,7 +176,10 @@ def test_logger_auto_generated_session_ids_do_not_overwrite_each_other(tmp_path)
     second.close()
 
     assert first.session_id != second.session_id
-    assert {path.stem for path in tmp_path.glob("*.log")} == {first.session_id, second.session_id}
+    assert {path.stem for path in tmp_path.glob("*.log")} == {
+        first.session_id,
+        second.session_id,
+    }
 
 
 def test_logger_can_record_only_completed_turns_after_a_failed_turn(tmp_path):
@@ -178,14 +227,16 @@ def test_session_counts_and_describes_runtime_and_parse_errors(tmp_path):
     path = tmp_path / "failed.log"
     path.write_text(
         '{"time":"2026-07-14T20:05:29","event":"run_error","error":"ModelAPIError","message":"Connection error."}\n'
-        'not json\n',
+        "not json\n",
         encoding="utf-8",
     )
 
     session = load_session(path)
 
     assert session["stats"]["error_count"] == 2
-    runtime_error = next(entry for entry in session["entries"] if entry["event"] == "run_error")
+    runtime_error = next(
+        entry for entry in session["entries"] if entry["event"] == "run_error"
+    )
     assert runtime_error["summary"] == "ModelAPIError: Connection error."
 
 
@@ -212,7 +263,8 @@ def test_session_describes_rejected_world_updates(tmp_path):
     session = load_session(list_logs(tmp_path)[0]["path"])
 
     rejections = [
-        entry for entry in session["entries"]
+        entry
+        for entry in session["entries"]
         if entry["event"] == "world_update_rejected"
     ]
     assert rejections[0]["summary"] == (
@@ -250,4 +302,8 @@ def test_digest_legacy_repr_string():
     digest = _digest_message(message)
     assert digest["kind"] == "model_response"
     assert digest["tool_calls"] == ["travel"]
-    assert digest["usage"] == {"input_tokens": 42, "cache_read_tokens": 7, "output_tokens": 3}
+    assert digest["usage"] == {
+        "input_tokens": 42,
+        "cache_read_tokens": 7,
+        "output_tokens": 3,
+    }

@@ -19,6 +19,7 @@ _TICK_RE = re.compile(r"^world_state_(\d+)\.json$")
 # Discovery
 # ============================================================
 
+
 def list_ticks(scenario_dir: Path) -> list[int]:
     """Sorted tick numbers that have a snapshot file in a scenario's state directory."""
     ticks: list[int] = []
@@ -54,7 +55,9 @@ def list_state_runs(state_dir: Path) -> list[dict[str, Any]]:
                     "pc": manifest.get("pc"),
                     "tick_count": len(ticks),
                     "latest_tick": ticks[-1],
-                    "modified_time": datetime.fromtimestamp(latest.stat().st_mtime).isoformat(),
+                    "modified_time": datetime.fromtimestamp(
+                        latest.stat().st_mtime
+                    ).isoformat(),
                 }
             )
     result.sort(key=lambda item: item["modified_time"], reverse=True)
@@ -72,21 +75,30 @@ def _safe_manifest(scenario: str) -> dict[str, Any]:
 # Loading
 # ============================================================
 
-def load_view(state_dir: Path, scenario: str, run_id: str, tick: int | None = None) -> dict[str, Any]:
+
+def load_view(
+    state_dir: Path, scenario: str, run_id: str, tick: int | None = None
+) -> dict[str, Any]:
     """One snapshot plus everything the dashboard needs: tick list, PC id, diff vs previous tick, event clocks."""
     run_path = Path(state_dir) / scenario / run_id
     ticks = list_ticks(run_path)
     if not ticks:
-        raise FileNotFoundError(f"No snapshots found for scenario '{scenario}' run '{run_id}'")
+        raise FileNotFoundError(
+            f"No snapshots found for scenario '{scenario}' run '{run_id}'"
+        )
 
     if tick is None:
         tick = ticks[-1]
     if tick not in ticks:
-        raise FileNotFoundError(f"No snapshot for tick {tick} in scenario '{scenario}' run '{run_id}'")
+        raise FileNotFoundError(
+            f"No snapshot for tick {tick} in scenario '{scenario}' run '{run_id}'"
+        )
 
     state = _read_snapshot(run_path, tick)
     tick_index = ticks.index(tick)
-    prev_state = _read_snapshot(run_path, ticks[tick_index - 1]) if tick_index > 0 else None
+    prev_state = (
+        _read_snapshot(run_path, ticks[tick_index - 1]) if tick_index > 0 else None
+    )
     manifest = _safe_manifest(scenario)
 
     return {
@@ -103,7 +115,9 @@ def load_view(state_dir: Path, scenario: str, run_id: str, tick: int | None = No
     }
 
 
-def load_series(state_dir: Path, scenario: str, run_id: str) -> dict[str, list[dict[str, int]]]:
+def load_series(
+    state_dir: Path, scenario: str, run_id: str
+) -> dict[str, list[dict[str, int]]]:
     """Character stat history across every available snapshot."""
     run_path = Path(state_dir) / scenario / run_id
     result: dict[str, list[dict[str, int]]] = {}
@@ -111,12 +125,14 @@ def load_series(state_dir: Path, scenario: str, run_id: str) -> dict[str, list[d
         snapshot = _read_snapshot(run_path, tick)
         for character_id, character in snapshot.get("characters", {}).items():
             stats = character.get("stats", {})
-            result.setdefault(character_id, []).append({
-                "tick": tick,
-                "hp": stats.get("hp", 0),
-                "xp": stats.get("xp", 0),
-                "gold": stats.get("gold", 0),
-            })
+            result.setdefault(character_id, []).append(
+                {
+                    "tick": tick,
+                    "hp": stats.get("hp", 0),
+                    "xp": stats.get("xp", 0),
+                    "gold": stats.get("gold", 0),
+                }
+            )
     return result
 
 
@@ -145,17 +161,26 @@ def format_clock(total_minutes: int) -> str:
 # Diffing
 # ============================================================
 
+
 def _diff(prev: dict[str, Any], curr: dict[str, Any]) -> dict[str, Any]:
     """What changed since the previous snapshot, keyed by entity id. Empty sections are omitted per entity."""
     return {
-        "characters": _diff_characters(prev.get("characters", {}), curr.get("characters", {})),
+        "characters": _diff_characters(
+            prev.get("characters", {}), curr.get("characters", {})
+        ),
         "quests": _diff_quests(prev.get("quests", {}), curr.get("quests", {})),
-        "new_locations": [lid for lid in curr.get("locations", {}) if lid not in prev.get("locations", {})],
+        "new_locations": [
+            lid
+            for lid in curr.get("locations", {})
+            if lid not in prev.get("locations", {})
+        ],
         "new_history": len(curr.get("history", [])) - len(prev.get("history", [])),
     }
 
 
-def _diff_characters(prev: dict[str, Any], curr: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _diff_characters(
+    prev: dict[str, Any], curr: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
     changes: dict[str, dict[str, Any]] = {}
     for cid, char in curr.items():
         before = prev.get(cid)
@@ -164,13 +189,23 @@ def _diff_characters(prev: dict[str, Any], curr: dict[str, Any]) -> dict[str, di
             continue
         delta: dict[str, Any] = {}
         for stat in ("hp", "xp", "gold", "level"):
-            diff = char.get("stats", {}).get(stat, 0) - before.get("stats", {}).get(stat, 0)
+            diff = char.get("stats", {}).get(stat, 0) - before.get("stats", {}).get(
+                stat, 0
+            )
             if diff:
                 delta[stat] = diff
         if char.get("location") != before.get("location"):
             delta["moved_from"] = before.get("location")
-        gained = [item for item in char.get("inventory", []) if item not in before.get("inventory", [])]
-        lost = [item for item in before.get("inventory", []) if item not in char.get("inventory", [])]
+        gained = [
+            item
+            for item in char.get("inventory", [])
+            if item not in before.get("inventory", [])
+        ]
+        lost = [
+            item
+            for item in before.get("inventory", [])
+            if item not in char.get("inventory", [])
+        ]
         if gained:
             delta["gained"] = gained
         if lost:
@@ -180,7 +215,9 @@ def _diff_characters(prev: dict[str, Any], curr: dict[str, Any]) -> dict[str, di
     return changes
 
 
-def _diff_quests(prev: dict[str, Any], curr: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _diff_quests(
+    prev: dict[str, Any], curr: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
     changes: dict[str, dict[str, Any]] = {}
     for qid, quest in curr.items():
         before = prev.get(qid)

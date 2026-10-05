@@ -24,7 +24,15 @@ from src.engine.state import (
     slugify,
 )
 from src.agents.character.agent import remote_action_location
-from src.agents.character.tools import Action, Attack, CharacterTool, Check, Speak, Travel, Wait
+from src.agents.character.tools import (
+    Action,
+    Attack,
+    CharacterTool,
+    Check,
+    Speak,
+    Travel,
+    Wait,
+)
 from src.engine.rules import DieRoller, resolve_check
 from src.agents.dm.tools import Create, Modify
 from src.agents.utils import create_model
@@ -50,7 +58,17 @@ _TACTICAL_GOAL_VERBS = {
     "travel",
     "visit",
 }
-_GOAL_STOP_WORDS = {"about", "before", "from", "into", "that", "the", "their", "this", "with"}
+_GOAL_STOP_WORDS = {
+    "about",
+    "before",
+    "from",
+    "into",
+    "that",
+    "the",
+    "their",
+    "this",
+    "with",
+}
 _KNOWLEDGE_STOP_WORDS = {
     "about",
     "after",
@@ -199,6 +217,7 @@ _TRANSIENT_SELF_ACTION_VERBS = {
 # Public entry
 # ============================================================
 
+
 async def resolve(
     tool: AnyTool,
     state: WorldState,
@@ -209,7 +228,9 @@ async def resolve(
     """Execute a tool call against world state. Single writer surface."""
     tool = _normalize_tool_ids(tool, state)
     history_size = len(state.history)
-    knowledge_size = sum(len(character.knowledge) for character in state.characters.values())
+    knowledge_size = sum(
+        len(character.knowledge) for character in state.characters.values()
+    )
     blocked_result = _dead_actor_result(tool, state)
     result = blocked_result or await _dispatch(tool, state, usage, logger, rng)
     if blocked_result is None and len(state.history) > history_size:
@@ -222,8 +243,14 @@ async def resolve(
             ),
         )
     if logger:
-        subject = getattr(tool, "actor", None) or getattr(tool, "target_id", None) or getattr(tool, "name", None)
-        logger.log_event("resolved", tool=type(tool).__name__, subject=subject, result=result)
+        subject = (
+            getattr(tool, "actor", None)
+            or getattr(tool, "target_id", None)
+            or getattr(tool, "name", None)
+        )
+        logger.log_event(
+            "resolved", tool=type(tool).__name__, subject=subject, result=result
+        )
     return result
 
 
@@ -251,10 +278,16 @@ def _normalize_tool_ids(tool: AnyTool, state: WorldState) -> AnyTool:
         target_id: str | None = None
         if tool.action == "update_quest":
             target_id = next(
-                (candidate for candidate in state.quests if slugify(candidate) == slugify(tool.target_id)),
+                (
+                    candidate
+                    for candidate in state.quests
+                    if slugify(candidate) == slugify(tool.target_id)
+                ),
                 None,
             )
-        elif tool.action == "remove_npc" and (target := resolve_character(state, tool.target_id)):
+        elif tool.action == "remove_npc" and (
+            target := resolve_character(state, tool.target_id)
+        ):
             target_id = target.id
         elif tool.action == "update_location":
             target_id = resolve_location_id(state, tool.target_id)
@@ -269,11 +302,15 @@ def _normalize_tool_ids(tool: AnyTool, state: WorldState) -> AnyTool:
 
     if isinstance(tool, Speak) and (target := resolve_character(state, tool.target)):
         updates["target"] = target.id
-    elif isinstance(tool, Travel) and (destination := resolve_location_id(state, tool.destination)):
+    elif isinstance(tool, Travel) and (
+        destination := resolve_location_id(state, tool.destination)
+    ):
         updates["destination"] = destination
     elif isinstance(tool, Attack) and (target := resolve_character(state, tool.target)):
         updates["target"] = target.id
-    elif isinstance(tool, Check) and (opponent := resolve_character(state, tool.opponent)):
+    elif isinstance(tool, Check) and (
+        opponent := resolve_character(state, tool.opponent)
+    ):
         updates["opponent"] = opponent.id
 
     return tool.model_copy(update=updates) if updates else tool
@@ -331,7 +368,7 @@ def _describes_pending_intent(text: str, state: WorldState | None = None) -> boo
             for match in _EMBEDDED_TRANSIENT_ACTION_CLAUSE.finditer(text)
         )
         or any(
-            tuple(words[index:index + len(phrase)]) == phrase
+            tuple(words[index : index + len(phrase)]) == phrase
             for phrase in _EMBEDDED_PENDING_INTENT_PHRASES
             for index in range(len(words) - len(phrase) + 1)
         )
@@ -343,8 +380,7 @@ def _describes_pending_intent(text: str, state: WorldState | None = None) -> boo
     return (
         words[0] in _PENDING_INTENT_PREFIXES
         or any(
-            tuple(words[:len(phrase)]) == phrase
-            for phrase in _PENDING_INTENT_PHRASES
+            tuple(words[: len(phrase)]) == phrase for phrase in _PENDING_INTENT_PHRASES
         )
         or words[0] in {"must", "should", "will"}
     )
@@ -359,8 +395,8 @@ def _describes_known_character_follow_up(state: WorldState, text: str) -> bool:
             words = words[1:]
         for character_id in state.characters:
             subject = slugify(character_id).split("-")
-            if words[:len(subject)] == subject:
-                remainder = words[len(subject):]
+            if words[: len(subject)] == subject:
+                remainder = words[len(subject) :]
             elif subject and words[:1] == subject[:1]:
                 remainder = words[1:]
             else:
@@ -392,14 +428,16 @@ def _describes_transient_self_action(character: Character, text: str) -> bool:
         subject_end = 0
     elif words[0] == "i":
         subject_end = 1
-    elif character_words and words[:len(character_words)] == character_words:
+    elif character_words and words[: len(character_words)] == character_words:
         subject_end = len(character_words)
     elif character_words and words[0] == character_words[0]:
         subject_end = 1
     else:
         return False
 
-    return bool(set(words[subject_end:subject_end + 5]) & _TRANSIENT_SELF_ACTION_VERBS)
+    return bool(
+        set(words[subject_end : subject_end + 5]) & _TRANSIENT_SELF_ACTION_VERBS
+    )
 
 
 def _repeats_recent_knowledge(character: Character, proposed: str) -> bool:
@@ -429,7 +467,9 @@ def _goal_verb(text: str) -> str:
     return words[0] if words else ""
 
 
-def _narrows_active_quest_goal(actor: str, proposed_goal: str, state: WorldState) -> bool:
+def _narrows_active_quest_goal(
+    actor: str, proposed_goal: str, state: WorldState
+) -> bool:
     """Reject a tactical quest step masquerading as a durable character goal."""
     character = state.characters[actor]
     current_words = _goal_words(character.goal)
@@ -444,23 +484,38 @@ def _narrows_active_quest_goal(actor: str, proposed_goal: str, state: WorldState
         proposed_mentions_quest = bool(topic_words & proposed_words)
 
         # Preserve the original owner guard for unplanned and legacy quests.
-        if quest.owner == actor and current_verb == proposed_verb and proposed_mentions_quest:
+        if (
+            quest.owner == actor
+            and current_verb == proposed_verb
+            and proposed_mentions_quest
+        ):
             return True
 
         # Supporting NPCs are relevant only when their existing durable goal
         # already aligns with this quest. A genuine change such as betrayal is
         # not a tactical verb and remains allowed.
         supports_quest = quest.owner == actor or bool(topic_words & current_words)
-        if not supports_quest or not proposed_mentions_quest or proposed_verb not in _TACTICAL_GOAL_VERBS:
+        if (
+            not supports_quest
+            or not proposed_mentions_quest
+            or proposed_verb not in _TACTICAL_GOAL_VERBS
+        ):
             continue
-        if any(len(proposed_words & _goal_words(objective)) >= 2 for objective in quest.plan):
+        if any(
+            len(proposed_words & _goal_words(objective)) >= 2
+            for objective in quest.plan
+        ):
             return True
 
     return False
 
 
 async def _dispatch(
-    tool: AnyTool, state: WorldState, usage: RunUsage | None, logger: Logger | None, rng: DieRoller | None
+    tool: AnyTool,
+    state: WorldState,
+    usage: RunUsage | None,
+    logger: Logger | None,
+    rng: DieRoller | None,
 ) -> str:
     if isinstance(tool, Speak):
         return WorldOperations(state).speak(tool.actor, tool.message, tool.target)
@@ -485,6 +540,7 @@ async def _dispatch(
 # Deterministic dispatch
 # ============================================================
 
+
 def _resolve_wait(tool: Wait, state: WorldState) -> str:
     actor = state.characters.get(tool.actor)
     if actor is None:
@@ -501,7 +557,9 @@ def _resolve_wait(tool: Wait, state: WorldState) -> str:
         )
     else:
         text = f"{tool.actor} waits."
-    state.history.append(HistoryEvent(text=text, location=actor.location, characters=[tool.actor]))
+    state.history.append(
+        HistoryEvent(text=text, location=actor.location, characters=[tool.actor])
+    )
     return text
 
 
@@ -535,7 +593,9 @@ def _resolve_check(tool: Check, state: WorldState, rng: DieRoller | None) -> str
         )
         characters.append(opponent.id)
     text = f"{tool.actor} {outcome}: {tool.description} [{tool.ability}; {detail}]."
-    state.history.append(HistoryEvent(text=text, location=actor.location, characters=characters))
+    state.history.append(
+        HistoryEvent(text=text, location=actor.location, characters=characters)
+    )
     return text
 
 
@@ -544,7 +604,9 @@ def _resolve_create(tool: Create, state: WorldState) -> str:
     location = resolve_location_id(state, tool.location) or tool.location
     if tool.type == "location":
         connections = [location] if location else []
-        return ops.add_location(slugify(tool.name), description=tool.description, connections=connections)
+        return ops.add_location(
+            slugify(tool.name), description=tool.description, connections=connections
+        )
     if tool.type == "item":
         if not location:
             return "Cannot create item — location is required."
@@ -575,7 +637,9 @@ def _resolve_modify(tool: Modify, state: WorldState) -> str:
     if tool.action == "update_quest":
         if not tool.status and not tool.step and not tool.advance:
             return "Cannot update a quest without status, step, or advance."
-        return ops.advance_quest(tool.target_id, new_status=tool.status, step=tool.step, advance=tool.advance)
+        return ops.advance_quest(
+            tool.target_id, new_status=tool.status, step=tool.step, advance=tool.advance
+        )
     if tool.action == "remove_npc":
         return ops.delete_npc(tool.target_id, reason=tool.reason or "")
     if tool.action == "update_location":
@@ -591,11 +655,15 @@ def _resolve_modify(tool: Modify, state: WorldState) -> str:
     return f"Unknown modify action: {tool.action!r}."
 
 
-async def _resolve_action(tool: Action, state: WorldState, usage: RunUsage | None, logger: Logger | None) -> str:
+async def _resolve_action(
+    tool: Action, state: WorldState, usage: RunUsage | None, logger: Logger | None
+) -> str:
     char = state.characters.get(tool.actor)
     if not char:
         return f"Cannot resolve action — character {tool.actor!r} not found."
-    if remote_location := remote_action_location(state, char, tool.description, tool.target):
+    if remote_location := remote_action_location(
+        state, char, tool.description, tool.target
+    ):
         location_id, _ = remote_location
         return (
             f"Cannot resolve action at {location_id!r} — {tool.actor!r} is at "
@@ -605,14 +673,20 @@ async def _resolve_action(tool: Action, state: WorldState, usage: RunUsage | Non
     prompt = f"Resolve this action: {tool.description}"
     if tool.target:
         prompt += f" (target: {tool.target})"
-    deps = ActionResolverDeps(char=char, state=state, description=tool.description, target=tool.target)
+    deps = ActionResolverDeps(
+        char=char, state=state, description=tool.description, target=tool.target
+    )
     try:
         if logger:
             with logger.run("action_resolver"):
-                result = await agent.run(prompt, deps=deps, usage=usage, usage_limits=_ACTION_USAGE)
+                result = await agent.run(
+                    prompt, deps=deps, usage=usage, usage_limits=_ACTION_USAGE
+                )
                 logger.log_messages("action_resolver", result.all_messages())
         else:
-            result = await agent.run(prompt, deps=deps, usage=usage, usage_limits=_ACTION_USAGE)
+            result = await agent.run(
+                prompt, deps=deps, usage=usage, usage_limits=_ACTION_USAGE
+            )
         output = " ".join(deps.effects) if deps.effects else result.output.strip()
     except UsageLimitExceeded:
         output = (
@@ -621,17 +695,20 @@ async def _resolve_action(tool: Action, state: WorldState, usage: RunUsage | Non
             else f"{char.id} makes no further progress on that action."
         )
     if output and len(state.history) == history_size:
-        state.history.append(HistoryEvent(
-            text=output,
-            location=char.location,
-            characters=[char.id],
-        ))
+        state.history.append(
+            HistoryEvent(
+                text=output,
+                location=char.location,
+                characters=[char.id],
+            )
+        )
     return output
 
 
 # ============================================================
 # Internal LLM sub-agent for free-form Action tool
 # ============================================================
+
 
 @dataclass
 class ActionResolverDeps:
@@ -671,7 +748,9 @@ def _ops(ctx: RunContext[ActionResolverDeps]) -> WorldOperations:
     return WorldOperations(ctx.deps.state)
 
 
-def _apply_effect(ctx: RunContext[ActionResolverDeps], operation: Callable[[], str]) -> str:
+def _apply_effect(
+    ctx: RunContext[ActionResolverDeps], operation: Callable[[], str]
+) -> str:
     """Record only operation results that correspond to a real state mutation."""
     before = ctx.deps.state.model_dump()
     result = operation()
@@ -687,7 +766,7 @@ def _phrase_positions(words: list[str], phrase: list[str]) -> list[int]:
     return [
         index
         for index in range(len(words) - len(phrase) + 1)
-        if words[index:index + len(phrase)] == phrase
+        if words[index : index + len(phrase)] == phrase
     ]
 
 
@@ -698,7 +777,15 @@ def _conflicting_current_whereabouts(
     """Find a durable whereabouts claim that contradicts canonical character state."""
     words = slugify(knowledge).split("-")
     location_verbs = {"is", "located", "remains", "stays", "stands", "waits"}
-    movement_verbs = {"heads", "heading", "moved", "moves", "traveled", "travels", "went"}
+    movement_verbs = {
+        "heads",
+        "heading",
+        "moved",
+        "moves",
+        "traveled",
+        "travels",
+        "went",
+    }
     location_links = {"at", "in", "inside", "near", "outside"}
     movement_links = {"at", "for", "into", "to", "toward", "towards"}
     current_markers = {"currently", "likely", "nearby", "now", "still"}
@@ -714,9 +801,9 @@ def _conflicting_current_whereabouts(
                     if location_position <= character_position:
                         continue
                     bridge = words[
-                        character_position + len(character_words):location_position
+                        character_position + len(character_words) : location_position
                     ]
-                    after_location = words[location_position + len(location_words):]
+                    after_location = words[location_position + len(location_words) :]
                     direct_location_claim = (
                         bool(bridge)
                         and len(bridge) <= 4
@@ -728,19 +815,30 @@ def _conflicting_current_whereabouts(
                             or bridge[:3] == ["can", "be", "found"]
                         )
                     )
-                    uncertain_current_claim = (
-                        bridge[:3] == ["was", "spotted", "heading"]
-                        and bool(current_markers & set(after_location[:10]))
-                    )
+                    uncertain_current_claim = bridge[:3] == [
+                        "was",
+                        "spotted",
+                        "heading",
+                    ] and bool(current_markers & set(after_location[:10]))
                     if direct_location_claim or uncertain_current_claim:
                         return character, location_id
     return None
 
 
-def _current_location_subject_words(words: list[str], location_position: int) -> set[str]:
+def _current_location_subject_words(
+    words: list[str], location_position: int
+) -> set[str]:
     """Return the nearby subject words when a phrase makes a current-location claim."""
     location_verbs = {"is", "located", "remains", "stays", "stands", "waits"}
-    movement_verbs = {"heads", "heading", "moved", "moves", "traveled", "travels", "went"}
+    movement_verbs = {
+        "heads",
+        "heading",
+        "moved",
+        "moves",
+        "traveled",
+        "travels",
+        "went",
+    }
     location_links = {"at", "in", "inside", "near", "outside"}
     movement_links = {"at", "for", "into", "to", "toward", "towards"}
     start = max(0, location_position - 7)
@@ -758,13 +856,15 @@ def _current_location_subject_words(words: list[str], location_position: int) ->
         if direct_claim:
             return {
                 word
-                for word in words[max(0, verb_position - 3):verb_position]
+                for word in words[max(0, verb_position - 3) : verb_position]
                 if word not in {"a", "an", "the"}
             }
     return set()
 
 
-def _upgrades_workplace_to_current_whereabouts(state: WorldState, knowledge: str) -> bool:
+def _upgrades_workplace_to_current_whereabouts(
+    state: WorldState, knowledge: str
+) -> bool:
     """Reject current presence inferred only from a recent workplace association."""
     proposed_words = re.findall(r"[a-z0-9]+", knowledge.casefold())
     workplace_verbs = {"employed", "work", "worked", "works"}
@@ -797,7 +897,7 @@ def _upgrades_workplace_to_current_whereabouts(state: WorldState, knowledge: str
                     source_subject = {
                         word
                         for word in source_words[
-                            max(0, workplace_position - 3):workplace_position
+                            max(0, workplace_position - 3) : workplace_position
                         ]
                         if word not in ignored_subject_words
                     }
@@ -857,7 +957,9 @@ def add_detail(
     """add a newly discovered concrete detail to the current location or another known location."""
     return _apply_effect(
         ctx,
-        lambda: _ops(ctx).modify_location(location or ctx.deps.char.location, add_feature=detail),
+        lambda: _ops(ctx).modify_location(
+            location or ctx.deps.char.location, add_feature=detail
+        ),
     )
 
 
@@ -986,7 +1088,9 @@ def create_item(
 
 
 @agent.tool(sequential=True)
-def give_gold(ctx: RunContext[ActionResolverDeps], amount: int, character_id: str) -> str:
+def give_gold(
+    ctx: RunContext[ActionResolverDeps], amount: int, character_id: str
+) -> str:
     """give some of my gold to another character — payment, bribe, tip. no item involved."""
     return _apply_effect(
         ctx,

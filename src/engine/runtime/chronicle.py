@@ -26,7 +26,9 @@ def digest(events: list[HistoryEvent]) -> str:
     return joined if len(joined) <= 600 else joined[:597] + "..."
 
 
-async def compact_history(state: WorldState, logger: Logger, replay: ReplayTape | None = None) -> None:
+async def compact_history(
+    state: WorldState, logger: Logger, replay: ReplayTape | None = None
+) -> None:
     """Summarize the oldest events into one chronicle entry once history exceeds the threshold."""
     if len(state.history) <= HISTORY_COMPACT_THRESHOLD:
         return

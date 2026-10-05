@@ -62,7 +62,9 @@ def test_broker_rejects_invalid_action_without_consuming_turn():
 
 def test_remote_controller_round_trip_through_dashboard(tmp_path):
     broker = PlayBroker()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler(tmp_path, tmp_path, broker))
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0), _build_handler(tmp_path, tmp_path, broker)
+    )
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     base_url = f"http://127.0.0.1:{server.server_port}"

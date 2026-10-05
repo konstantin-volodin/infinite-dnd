@@ -28,7 +28,12 @@ class CharacterDeps:
 def _living_targets(ctx: RunContext[CharacterDeps]) -> list[str]:
     """Living characters sharing the actor's location — valid speak/attack targets."""
     return [
-        c.id for c in characters_in_location(ctx.deps.state, ctx.deps.char.location, exclude_character_id=ctx.deps.char.id)
+        c.id
+        for c in characters_in_location(
+            ctx.deps.state,
+            ctx.deps.char.location,
+            exclude_character_id=ctx.deps.char.id,
+        )
         if c.stats.hp > 0
     ]
 
@@ -155,7 +160,11 @@ def _remote_action_character(
         return explicit_target if explicit_target.location != actor.location else None
 
     words = set(slugify(description).split("-"))
-    if not any(word.startswith(prefix) for word in words for prefix in _DIRECT_INTERACTION_VERBS):
+    if not any(
+        word.startswith(prefix)
+        for word in words
+        for prefix in _DIRECT_INTERACTION_VERBS
+    ):
         return None
 
     for character in state.characters.values():
@@ -176,14 +185,10 @@ def remote_action_location(
     """Return a known remote location and the invalid action kind targeting it."""
     words = slugify(description).split("-")
     movement_positions = [
-        index
-        for index, word in enumerate(words)
-        if word in _MOVEMENT_VERBS
+        index for index, word in enumerate(words) if word in _MOVEMENT_VERBS
     ]
     interaction_positions = [
-        index
-        for index, word in enumerate(words)
-        if word in _LOCATION_INTERACTION_VERBS
+        index for index, word in enumerate(words) if word in _LOCATION_INTERACTION_VERBS
     ]
 
     explicit_target = resolve_location_id(state, target)
@@ -196,7 +201,7 @@ def remote_action_location(
         location_positions = [
             index
             for index in range(len(words) - len(location_words) + 1)
-            if words[index:index + len(location_words)] == location_words
+            if words[index : index + len(location_words)] == location_words
         ]
 
         # An explicit location target with no corresponding prose phrase means
@@ -214,7 +219,7 @@ def remote_action_location(
             for position in interaction_positions:
                 if not 0 < index - position <= 6:
                     continue
-                bridge = words[position + 1:index]
+                bridge = words[position + 1 : index]
                 if not (_REMOTE_REFERENCE_LINKS & set(bridge)):
                     return location_id, "interaction"
     return None
@@ -230,16 +235,40 @@ def _prepare_output_tools(
     result: list[ToolDefinition] = []
     for td in tool_defs:
         if td.name == "speak":
-            hint = f"Valid targets: {', '.join(targets)}." if targets else "No one else here — leave target empty."
-            result.append(replace(td, description=f"say something short — 1-2 sentences, like real speech. {hint}"))
+            hint = (
+                f"Valid targets: {', '.join(targets)}."
+                if targets
+                else "No one else here — leave target empty."
+            )
+            result.append(
+                replace(
+                    td,
+                    description=f"say something short — 1-2 sentences, like real speech. {hint}",
+                )
+            )
         elif td.name == "travel":
             if options:
-                result.append(replace(td, description=f"travel to a connected location. Valid ids: {', '.join(options)}."))
+                result.append(
+                    replace(
+                        td,
+                        description=f"travel to a connected location. Valid ids: {', '.join(options)}.",
+                    )
+                )
             else:
-                result.append(replace(td, description="no connected locations are available; use action to discover one."))
+                result.append(
+                    replace(
+                        td,
+                        description="no connected locations are available; use action to discover one.",
+                    )
+                )
         elif td.name == "attack":
             if targets:
-                result.append(replace(td, description=f"attack someone here. Valid targets: {', '.join(targets)}."))
+                result.append(
+                    replace(
+                        td,
+                        description=f"attack someone here. Valid targets: {', '.join(targets)}.",
+                    )
+                )
         else:
             result.append(td)
     return result
@@ -255,9 +284,19 @@ def speak_output(
     """say something short — 1-2 sentences, like real speech. can be targeted dialogue or thinking out loud."""
     targets = _living_targets(ctx)
     if target and target not in targets:
-        hint = f"Valid targets: {', '.join(targets)}." if targets else "No one else is here."
+        hint = (
+            f"Valid targets: {', '.join(targets)}."
+            if targets
+            else "No one else is here."
+        )
         raise ModelRetry(f"Cannot speak to {target!r}. {hint}")
-    return Speak(actor=ctx.deps.char.id, message=message, target=target, remember=remember, new_goal=new_goal)
+    return Speak(
+        actor=ctx.deps.char.id,
+        message=message,
+        target=target,
+        remember=remember,
+        new_goal=new_goal,
+    )
 
 
 def travel_output(
@@ -275,7 +314,12 @@ def travel_output(
             else "No connected locations are available; use action to discover one."
         )
         raise ModelRetry(f"Cannot travel to {location!r}. {hint}")
-    return Travel(actor=ctx.deps.char.id, destination=location, remember=remember, new_goal=new_goal)
+    return Travel(
+        actor=ctx.deps.char.id,
+        destination=location,
+        remember=remember,
+        new_goal=new_goal,
+    )
 
 
 def wait_output(
@@ -295,7 +339,9 @@ def action_output(
     new_goal: str | None = None,
 ) -> Action:
     """take a concrete action — search, examine, attempt, interact, discover. describe what and how in one plain sentence — no flourishes. use this when you can make progress, not just when speak/travel don't fit."""
-    if remote_location := remote_action_location(ctx.deps.state, ctx.deps.char, description, target):
+    if remote_location := remote_action_location(
+        ctx.deps.state, ctx.deps.char, description, target
+    ):
         location_id, action_kind = remote_location
         if action_kind == "movement":
             raise ModelRetry(
@@ -311,7 +357,13 @@ def action_output(
             f"Cannot interact with {remote_character.id!r} — they are not in the same location. "
             "Travel to or locate them before attempting the direct interaction."
         )
-    return Action(actor=ctx.deps.char.id, description=description, target=target, remember=remember, new_goal=new_goal)
+    return Action(
+        actor=ctx.deps.char.id,
+        description=description,
+        target=target,
+        remember=remember,
+        new_goal=new_goal,
+    )
 
 
 def attack_output(
@@ -323,9 +375,15 @@ def attack_output(
     """attack a character here. a serious, violent act with lasting consequences."""
     targets = _living_targets(ctx)
     if target not in targets:
-        hint = f"Valid targets: {', '.join(targets)}." if targets else "No one here to attack."
+        hint = (
+            f"Valid targets: {', '.join(targets)}."
+            if targets
+            else "No one here to attack."
+        )
         raise ModelRetry(f"Cannot attack {target!r}. {hint}")
-    return Attack(actor=ctx.deps.char.id, target=target, remember=remember, new_goal=new_goal)
+    return Attack(
+        actor=ctx.deps.char.id, target=target, remember=remember, new_goal=new_goal
+    )
 
 
 def check_output(
@@ -341,11 +399,19 @@ def check_output(
 ) -> Check:
     """attempt a risky action with a d20 check; use opponent only for a direct contest."""
     if opponent and opponent not in _living_targets(ctx):
-        raise ModelRetry(f"Cannot contest {opponent!r}; they are not a living character here.")
+        raise ModelRetry(
+            f"Cannot contest {opponent!r}; they are not a living character here."
+        )
     return Check(
-        actor=ctx.deps.char.id, ability=ability, description=description, difficulty=difficulty,
-        modifier=modifier, opponent=opponent, opposing_modifier=opposing_modifier,
-        remember=remember, new_goal=new_goal,
+        actor=ctx.deps.char.id,
+        ability=ability,
+        description=description,
+        difficulty=difficulty,
+        modifier=modifier,
+        opponent=opponent,
+        opposing_modifier=opposing_modifier,
+        remember=remember,
+        new_goal=new_goal,
     )
 
 

@@ -23,7 +23,9 @@ def test_director_context_includes_scene_affordances_and_motivations():
                 location="tavern",
                 stats=CharacterStats(hp=3, max_hp=5),
             ),
-            "remote": Character(id="remote", goal="burn the letter", location="canal-walk"),
+            "remote": Character(
+                id="remote", goal="burn the letter", location="canal-walk"
+            ),
         },
     )
 

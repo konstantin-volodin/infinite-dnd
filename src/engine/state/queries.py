@@ -27,7 +27,9 @@ def _fuzzy_match(raw: str, ids: list[str]) -> str | None:
     for candidate in ids:
         if slugify(candidate) == needle:
             return candidate
-    matches = [candidate for candidate in ids if needle and needle in slugify(candidate)]
+    matches = [
+        candidate for candidate in ids if needle and needle in slugify(candidate)
+    ]
     return matches[0] if len(matches) == 1 else None
 
 
@@ -61,7 +63,8 @@ def characters_in_location(
     state: WorldState, location_id: str, *, exclude_character_id: str | None = None
 ) -> list[Character]:
     return [
-        c for c in state.characters.values()
+        c
+        for c in state.characters.values()
         if c.location == location_id and c.id != exclude_character_id
     ]
 
@@ -73,7 +76,9 @@ def connected_location_ids(state: WorldState, location_id: str) -> list[str]:
     return [c for c in loc.connections if c in state.locations]
 
 
-def quest_deadline_clocks(state: WorldState, quest_ids: set[str]) -> list[tuple[Faction, ProgressClock]]:
+def quest_deadline_clocks(
+    state: WorldState, quest_ids: set[str]
+) -> list[tuple[Faction, ProgressClock]]:
     """Unresolved faction clocks that would fail one of the given quests, in stable faction/clock order."""
     return [
         (faction, clock)

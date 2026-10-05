@@ -9,8 +9,19 @@ def state(locations) -> WorldState:
     return WorldState(
         locations=locations,
         characters={
-            "hero": Character(id="hero", role="warrior", location="tavern", inventory=["sword"], stats=CharacterStats(hp=20, max_hp=20, level=1)),
-            "merchant": Character(id="merchant", role="shopkeeper", location="tavern", inventory=["potion", "shield"]),
+            "hero": Character(
+                id="hero",
+                role="warrior",
+                location="tavern",
+                inventory=["sword"],
+                stats=CharacterStats(hp=20, max_hp=20, level=1),
+            ),
+            "merchant": Character(
+                id="merchant",
+                role="shopkeeper",
+                location="tavern",
+                inventory=["potion", "shield"],
+            ),
         },
     )
 
@@ -22,15 +33,19 @@ def ops(state) -> CharacterOps:
 
 # ============ MOVEMENT ============
 
+
 def test_move_character(state, ops):
     ops.move_character("hero", "forest")
     assert state.characters["hero"].location == "forest"
     ops.move_character("hero", "cave")
     assert state.characters["hero"].location == "cave"
-    assert "Cannot reach" in ops.move_character("hero", "tavern")  # cave only connects to forest
+    assert "Cannot reach" in ops.move_character(
+        "hero", "tavern"
+    )  # cave only connects to forest
 
 
 # ============ ITEMS ============
+
 
 def test_take_drop_item(state, ops):
     ops.take_item("hero", "ale")
@@ -42,6 +57,7 @@ def test_take_drop_item(state, ops):
 
 
 # ============ DIALOGUE ============
+
 
 def test_speak_rejects_remote_target_without_logging(state, ops):
     ops.move_character("hero", "forest")
@@ -55,8 +71,10 @@ def test_speak_rejects_remote_target_without_logging(state, ops):
 
 # ============ COMBAT ============
 
+
 class _FixedRng:
     """Stub rng — always rolls the maximum, so damage is deterministic."""
+
     def randint(self, a: int, b: int) -> int:
         return b
 
@@ -90,6 +108,7 @@ def test_attack_validation(state, ops):
 
 
 # ============ STATS ============
+
 
 def test_damage_heal(state, ops):
     ops.damage("hero", 8)
@@ -221,7 +240,9 @@ def test_give_gold(state, ops):
     ops.give_gold("hero", "merchant", 4)
     assert state.characters["hero"].stats.gold == 6
     assert state.characters["merchant"].stats.gold == 4
-    assert "Cannot give gold" in ops.give_gold("hero", "merchant", 100)  # not enough gold
+    assert "Cannot give gold" in ops.give_gold(
+        "hero", "merchant", 100
+    )  # not enough gold
     assert state.characters["hero"].stats.gold == 6  # unchanged
     assert "Cannot give gold" in ops.give_gold("ghost", "merchant", 1)  # unknown giver
     assert "Cannot give gold" in ops.give_gold("hero", "ghost", 1)  # unknown receiver
@@ -275,6 +296,7 @@ def test_transactions_reject_negative_values_without_mutating_state(state, ops):
 
 # ============ TRADE ============
 
+
 def test_trade_item(state, ops):
     state.characters["hero"].stats.gold = 10
     ops.trade_item("hero", "merchant", "potion", 4)
@@ -290,14 +312,21 @@ def test_trade_item(state, ops):
     assert state.characters["hero"].stats.gold == 10
     assert state.characters["merchant"].stats.gold == 0
 
-    assert "Cannot trade" in ops.trade_item("hero", "merchant", "wand", 1)  # seller doesn't have item
-    assert "Cannot trade" in ops.trade_item("hero", "merchant", "shield", 100)  # buyer can't afford
+    assert "Cannot trade" in ops.trade_item(
+        "hero", "merchant", "wand", 1
+    )  # seller doesn't have item
+    assert "Cannot trade" in ops.trade_item(
+        "hero", "merchant", "shield", 100
+    )  # buyer can't afford
 
     ops.move_character("hero", "forest")
-    assert "Cannot trade" in ops.trade_item("hero", "merchant", "shield", 1)  # different locations
+    assert "Cannot trade" in ops.trade_item(
+        "hero", "merchant", "shield", 1
+    )  # different locations
 
 
 # ============ RELATIONSHIPS ============
+
 
 def test_relationships(state, ops):
     ops.update_relationship("hero", "merchant", "friendly")
@@ -323,14 +352,19 @@ def test_relationships_reject_slug_equivalent_self_target_without_mutating(state
 
 # ============ KNOWLEDGE ============
 
+
 def test_knowledge(state, ops):
     history_before = len(state.history)
     ops.add_knowledge("hero", "The cave has a hidden passage")
     assert "The cave has a hidden passage" in state.characters["hero"].knowledge
     assert state.history[-1].text == "hero learns: The cave has a hidden passage"
     assert len(state.history) == history_before + 1
-    ops.add_knowledge("hero", "The cave has a hidden passage")  # idempotent — no new event
-    assert state.characters["hero"].knowledge.count("The cave has a hidden passage") == 1
+    ops.add_knowledge(
+        "hero", "The cave has a hidden passage"
+    )  # idempotent — no new event
+    assert (
+        state.characters["hero"].knowledge.count("The cave has a hidden passage") == 1
+    )
     assert len(state.history) == history_before + 1
 
 

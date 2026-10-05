@@ -9,13 +9,18 @@ from typing import Literal, Union
 from pydantic import BaseModel, Field
 
 
-Ability = Literal["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+Ability = Literal[
+    "strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"
+]
 
 
 class CharacterToolBase(BaseModel):
     """Shared optional fields every character tool carries — applied deterministically by the resolver."""
+
     remember: str | None = None  # one concrete fact to store in my own knowledge
-    new_goal: str | None = None  # replacement for my own goal, when something changed it
+    new_goal: str | None = (
+        None  # replacement for my own goal, when something changed it
+    )
 
 
 class Speak(CharacterToolBase):
@@ -51,6 +56,7 @@ class Attack(CharacterToolBase):
 
 class Check(CharacterToolBase):
     """A risky action resolved with a d20 against a DC or another character."""
+
     kind: Literal["check"] = "check"
     actor: str
     ability: Ability

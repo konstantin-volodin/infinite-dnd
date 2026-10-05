@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
+
 load_dotenv()
 
 
@@ -55,7 +56,9 @@ def load_profile(name: str | None = None) -> tuple[str, dict]:
     name = name or os.getenv("LLM_PROFILE", "default")
     profiles = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8"))
     if name not in profiles:
-        raise RuntimeError(f"Unknown LLM_PROFILE {name!r}; available: {', '.join(profiles)}")
+        raise RuntimeError(
+            f"Unknown LLM_PROFILE {name!r}; available: {', '.join(profiles)}"
+        )
     merged = dict(profiles["default"])
     merged.update(profiles[name])
     return name, merged
@@ -108,20 +111,27 @@ class LlamaServer:
         # -m loads a local file directly (no network); -hf resolves/downloads by repo id.
         model_arg = ["-m", model_path] if model_path else ["-hf", model]
         cmd = [
-            server_bin, *model_arg, "--port", str(port),
+            server_bin,
+            *model_arg,
+            "--port",
+            str(port),
             *_profile_args(config, model or model_path or ""),
             "--metrics",
             "--jinja",
             "--log-disable",
         ]
-        logging.info(f"Starting LlamaServer (profile {profile_name!r}): {' '.join(cmd)}")
+        logging.info(
+            f"Starting LlamaServer (profile {profile_name!r}): {' '.join(cmd)}"
+        )
         self._process = subprocess.Popen(cmd)
 
         # Loads of 26B models can take 60s+ from disk; first-time HF downloads take longer.
         deadline = time.time() + 300
         while time.time() < deadline:
             if self._process.poll() is not None:
-                raise RuntimeError(f"llama-server exited during startup with code {self._process.returncode}")
+                raise RuntimeError(
+                    f"llama-server exited during startup with code {self._process.returncode}"
+                )
             try:
                 with urllib.request.urlopen(self._health_url, timeout=1) as response:
                     body = response.read().decode("utf-8", errors="replace")
@@ -133,11 +143,16 @@ class LlamaServer:
                 pass
             time.sleep(0.5)
         self._process.terminate()
-        raise RuntimeError(f"llama-server did not become healthy in 300s: {self._health_url}")
+        raise RuntimeError(
+            f"llama-server did not become healthy in 300s: {self._health_url}"
+        )
 
     def stop(self):
         self._process.terminate()
         self._process.wait()
 
-    def __enter__(self): return self
-    def __exit__(self, *_): self.stop()
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.stop()

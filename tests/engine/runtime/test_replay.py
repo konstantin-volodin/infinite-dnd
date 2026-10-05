@@ -43,22 +43,30 @@ def test_tape_round_trips_all_structured_output_types(tmp_path):
     path = tmp_path / "run.jsonl"
     recording = ReplayTape.recording(path)
     recording.bind_context("crossroads", "hero")
-    recording.character("hero", Speak(actor="hero", target="innkeeper", message="Hello"))
-    recording.dm(DMResult(
-        creates=[Create(type="item", name="key", location="tavern")],
-        modifies=[Modify(action="update_quest", target_id="q1", advance=True)],
-        minutes=[3],
-    ))
-    recording.director(DirectorResult(
-        event="The bell begins to toll.",
-        create=Create(type="npc", name="Bailiff", location="tavern"),
-        quest_id="q1",
-    ))
+    recording.character(
+        "hero", Speak(actor="hero", target="innkeeper", message="Hello")
+    )
+    recording.dm(
+        DMResult(
+            creates=[Create(type="item", name="key", location="tavern")],
+            modifies=[Modify(action="update_quest", target_id="q1", advance=True)],
+            minutes=[3],
+        )
+    )
+    recording.director(
+        DirectorResult(
+            event="The bell begins to toll.",
+            create=Create(type="npc", name="Bailiff", location="tavern"),
+            quest_id="q1",
+        )
+    )
     recording.chronicle("The hero spent a week rebuilding the tavern's trade.")
 
     playback = ReplayTape.playback(path)
     assert playback.resolve_context(None, None) == ("crossroads", "hero")
-    assert playback.character("hero") == Speak(actor="hero", target="innkeeper", message="Hello")
+    assert playback.character("hero") == Speak(
+        actor="hero", target="innkeeper", message="Hello"
+    )
     assert playback.dm() == DMResult(
         creates=[Create(type="item", name="key", location="tavern")],
         modifies=[Modify(action="update_quest", target_id="q1", advance=True)],
@@ -69,7 +77,9 @@ def test_tape_round_trips_all_structured_output_types(tmp_path):
         create=Create(type="npc", name="Bailiff", location="tavern"),
         quest_id="q1",
     )
-    assert playback.chronicle() == "The hero spent a week rebuilding the tavern's trade."
+    assert (
+        playback.chronicle() == "The hero spent a week rebuilding the tavern's trade."
+    )
     playback.assert_consumed()
 
 
@@ -106,14 +116,21 @@ def test_tick_playback_never_calls_character_or_dm_agents(tmp_path, monkeypatch)
     asyncio.run(tick("hero", state, 0, _Logger(), replay=ReplayTape.playback(path)))
 
     assert state.history == [
-        HistoryEvent(text="hero waits.", location="tavern", characters=["hero"], minutes_elapsed=5)
+        HistoryEvent(
+            text="hero waits.",
+            location="tavern",
+            characters=["hero"],
+            minutes_elapsed=5,
+        )
     ]
     assert state.minutes_elapsed == 5
 
 
 def test_flow_playback_never_calls_director_agent(tmp_path, monkeypatch):
     path = tmp_path / "run.jsonl"
-    ReplayTape.recording(path).director(DirectorResult(event="A horn sounds.", quest_id="q1"))
+    ReplayTape.recording(path).director(
+        DirectorResult(event="A horn sounds.", quest_id="q1")
+    )
 
     async def unexpected(*_args, **_kwargs):
         raise AssertionError("the director agent was called during replay")
@@ -130,11 +147,13 @@ def test_action_playback_restores_effects_without_resolver_agent(tmp_path, monke
     path = tmp_path / "run.jsonl"
     recorded_state = _state()
     recorded_state.characters["hero"].knowledge.append("The loose brick hides a key.")
-    recorded_state.history.append(HistoryEvent(
-        text="hero finds a key behind the loose brick.",
-        location="tavern",
-        characters=["hero"],
-    ))
+    recorded_state.history.append(
+        HistoryEvent(
+            text="hero finds a key behind the loose brick.",
+            location="tavern",
+            characters=["hero"],
+        )
+    )
     tape = ReplayTape.recording(path)
     tape.character("hero", Action(actor="hero", description="Search the loose brick"))
     tape.action_resolution("hero", recorded_state, "A hidden key is found.")
@@ -160,19 +179,31 @@ def test_empty_event_dm_flow_does_not_consume_tape(tmp_path):
     recording.character("hero", Wait(actor="hero"))
     playback = ReplayTape.playback(path)
 
-    assert asyncio.run(flow_dm(_state(), [], _Logger(), playback)) == DMResult([], [], [])
-    assert asyncio.run(flow_agent_turn("hero", _state(), _Logger(), replay=playback)) == Wait(actor="hero")
+    assert asyncio.run(flow_dm(_state(), [], _Logger(), playback)) == DMResult(
+        [], [], []
+    )
+    assert asyncio.run(
+        flow_agent_turn("hero", _state(), _Logger(), replay=playback)
+    ) == Wait(actor="hero")
     playback.assert_consumed()
 
 
 def test_check_round_trips_and_playback_restores_recorded_roll(tmp_path):
     path = tmp_path / "check.jsonl"
-    check = Check(actor="hero", ability="wisdom", description="notices the tripwire", difficulty=16)
+    check = Check(
+        actor="hero",
+        ability="wisdom",
+        description="notices the tripwire",
+        difficulty=16,
+    )
     recorded_state = _state()
-    recorded_state.history.append(HistoryEvent(
-        text="hero succeeds: notices the tripwire [wisdom; 18+0=18 vs DC 16].",
-        location="tavern", characters=["hero"],
-    ))
+    recorded_state.history.append(
+        HistoryEvent(
+            text="hero succeeds: notices the tripwire [wisdom; 18+0=18 vs DC 16].",
+            location="tavern",
+            characters=["hero"],
+        )
+    )
     tape = ReplayTape.recording(path)
     tape.character("hero", check)
     tape.action_resolution("hero", recorded_state, recorded_state.history[-1].text)

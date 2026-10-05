@@ -1,4 +1,11 @@
-from src.engine.state.models import Character, Faction, Location, ProgressClock, Quest, WorldState
+from src.engine.state.models import (
+    Character,
+    Faction,
+    Location,
+    ProgressClock,
+    Quest,
+    WorldState,
+)
 from src.agents.character.context import character_context, character_system
 
 
@@ -12,8 +19,17 @@ def _state() -> WorldState:
             )
         },
         characters={
-            "hero": Character(id="hero", location="tavern", relationships={"merchant": "friendly — she patched me up"}),
-            "merchant": Character(id="merchant", role="merchant", location="tavern", relationships={"hero": "wary — caught him stealing"}),
+            "hero": Character(
+                id="hero",
+                location="tavern",
+                relationships={"merchant": "friendly — she patched me up"},
+            ),
+            "merchant": Character(
+                id="merchant",
+                role="merchant",
+                location="tavern",
+                relationships={"hero": "wary — caught him stealing"},
+            ),
             "bystander": Character(id="bystander", location="tavern"),
         },
     )
@@ -42,7 +58,10 @@ def test_context_includes_location_description_as_an_actionable_scene_cue():
 
     ctx = character_context(state.characters["hero"], state)
 
-    assert "**tavern:** A canal-side inn with a sagging floor and too many locked doors." in ctx
+    assert (
+        "**tavern:** A canal-side inn with a sagging floor and too many locked doors."
+        in ctx
+    )
 
 
 def test_context_hides_dangling_location_connections_without_mutating_state():
@@ -60,10 +79,18 @@ def test_context_hides_dangling_location_connections_without_mutating_state():
 def test_context_shows_canonical_two_hop_routes_for_directions():
     state = _state()
     state.locations["tavern"].connections = ["bridge", "guild-hall"]
-    state.locations["bridge"] = Location(id="bridge", connections=["tavern", "forest-trail"])
-    state.locations["guild-hall"] = Location(id="guild-hall", connections=["tavern", "trade-dock"])
-    state.locations["forest-trail"] = Location(id="forest-trail", connections=["bridge"])
-    state.locations["trade-dock"] = Location(id="trade-dock", connections=["guild-hall"])
+    state.locations["bridge"] = Location(
+        id="bridge", connections=["tavern", "forest-trail"]
+    )
+    state.locations["guild-hall"] = Location(
+        id="guild-hall", connections=["tavern", "trade-dock"]
+    )
+    state.locations["forest-trail"] = Location(
+        id="forest-trail", connections=["bridge"]
+    )
+    state.locations["trade-dock"] = Location(
+        id="trade-dock", connections=["guild-hall"]
+    )
 
     ctx = character_context(state.characters["hero"], state)
 
@@ -94,14 +121,16 @@ def test_context_exposes_owned_quest_deadline_pressure():
         id="flood",
         name="The Rising Canal",
         goal="Overtop the banks",
-        clocks=[ProgressClock(
-            id="high-water",
-            name="High water",
-            consequence="The canal floods the inn.",
-            segments=4,
-            progress=2,
-            fail_quest_id="save-inn",
-        )],
+        clocks=[
+            ProgressClock(
+                id="high-water",
+                name="High water",
+                consequence="The canal floods the inn.",
+                segments=4,
+                progress=2,
+                fail_quest_id="save-inn",
+            )
+        ],
     )
 
     ctx = character_context(state.characters["hero"], state)

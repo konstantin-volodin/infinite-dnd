@@ -1,6 +1,13 @@
 import json
 
-from src.engine.state.models import Character, CharacterStats, HistoryEvent, Location, Quest, WorldState
+from src.engine.state.models import (
+    Character,
+    CharacterStats,
+    HistoryEvent,
+    Location,
+    Quest,
+    WorldState,
+)
 from src.interface.recap import build_recap, main
 
 
@@ -12,27 +19,54 @@ def _state() -> WorldState:
             "forest": Location(id="forest"),
         },
         history=[
-            HistoryEvent(text="Hero arrives at the tavern.", location="tavern", minutes_elapsed=30),
-            HistoryEvent(text="Hero orders a drink.", location="tavern", minutes_elapsed=10),
-            HistoryEvent(text="Hero travels to the forest.", location="forest", minutes_elapsed=1400),
+            HistoryEvent(
+                text="Hero arrives at the tavern.",
+                location="tavern",
+                minutes_elapsed=30,
+            ),
+            HistoryEvent(
+                text="Hero orders a drink.", location="tavern", minutes_elapsed=10
+            ),
+            HistoryEvent(
+                text="Hero travels to the forest.",
+                location="forest",
+                minutes_elapsed=1400,
+            ),
         ],
         quests={
             "q1": Quest(
-                id="q1", title="Find the Amulet", description="", status="completed",
-                plan=["find the lair", "recover the amulet"], current_step=2,
+                id="q1",
+                title="Find the Amulet",
+                description="",
+                status="completed",
+                plan=["find the lair", "recover the amulet"],
+                current_step=2,
                 steps=["found the lair", "recovered the amulet"],
             ),
-            "q2": Quest(id="q2", title="Watch the Border", description="", status="active", steps=["patrol reported quiet"]),
+            "q2": Quest(
+                id="q2",
+                title="Watch the Border",
+                description="",
+                status="active",
+                steps=["patrol reported quiet"],
+            ),
         },
         characters={
-            "hero": Character(id="hero", role="warrior", location="forest", stats=CharacterStats(hp=0, max_hp=10, level=2, gold=15)),
+            "hero": Character(
+                id="hero",
+                role="warrior",
+                location="forest",
+                stats=CharacterStats(hp=0, max_hp=10, level=2, gold=15),
+            ),
             "villain": Character(id="villain", stats=CharacterStats(hp=5, max_hp=5)),
         },
     )
 
 
 def test_title_and_metadata_header():
-    md = build_recap(WorldState(), title="The Ashen Vale", scenario="ashen-vale", run_id="run-1")
+    md = build_recap(
+        WorldState(), title="The Ashen Vale", scenario="ashen-vale", run_id="run-1"
+    )
     assert md.startswith("# The Ashen Vale — Recap")
     assert "*ashen-vale · run-1*" in md
 
@@ -46,7 +80,9 @@ def test_chronicle_renders_as_previously_section():
 
 def test_story_groups_by_day_and_location():
     md = build_recap(_state(), title="Demo", scenario="demo", run_id="run-1")
-    assert "### day 1 · 00:40 ·" not in md  # header uses the clock at the *start* of the group, not its end
+    assert (
+        "### day 1 · 00:40 ·" not in md
+    )  # header uses the clock at the *start* of the group, not its end
     assert "### day 1 · 00:30 · tavern" in md
     assert "Hero arrives at the tavern. Hero orders a drink." in md
     assert "### day 2 · 00:00 · forest" in md
@@ -55,8 +91,13 @@ def test_story_groups_by_day_and_location():
 
 def test_quest_outcomes_show_status_and_progress():
     md = build_recap(_state(), title="Demo", scenario="demo", run_id="run-1")
-    assert "**Find the Amulet** — completed (2/2 steps); last: recovered the amulet" in md
-    assert "**Watch the Border** — active (1 steps logged); last: patrol reported quiet" in md
+    assert (
+        "**Find the Amulet** — completed (2/2 steps); last: recovered the amulet" in md
+    )
+    assert (
+        "**Watch the Border** — active (1 steps logged); last: patrol reported quiet"
+        in md
+    )
 
 
 def test_epilogue_reports_each_characters_fate():
