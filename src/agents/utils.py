@@ -17,8 +17,8 @@ def create_model() -> Model:
 
     LLM_PROVIDER=anthropic uses the Claude API (ANTHROPIC_API_KEY); "openai"
     uses the real OpenAI API (OPENAI_API_KEY) with a configurable reasoning
-    effort; anything else (default, "local") uses the local
-    OpenAI-compatible llama.cpp server.
+    effort; anything else uses an OpenAI-compatible endpoint (local by
+    default). DeepSeek thinking is disabled so required tool calls work.
     """
     provider = os.getenv("LLM_PROVIDER", "local")
     if provider == "anthropic":
@@ -43,6 +43,9 @@ def create_model() -> Model:
             base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),
             api_key=os.getenv("LLM_API_KEY", "not-needed"),
         ),
+        settings=OpenAIChatModelSettings(extra_body={"thinking": {"type": "disabled"}})
+        if provider == "deepseek"
+        else None,
     )
 
 
