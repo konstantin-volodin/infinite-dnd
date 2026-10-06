@@ -15,10 +15,16 @@ from src.interface.assets import read_asset, static_asset
 from src.engine.state import WorldState
 from src.interface.session_log import DEFAULT_LOG_DIR, list_logs, load_session
 from src.interface.web_player import PlayBroker
-from src.interface.world_state import DEFAULT_STATE_DIR, list_state_runs, load_series, load_view
+from src.interface.world_state import (
+    DEFAULT_STATE_DIR,
+    list_state_runs,
+    load_series,
+    load_view,
+)
 
 WORLD_HTML = read_asset("templates/world.html")
 LOGS_HTML = read_asset("templates/logs.html")
+
 
 def _with_nav(html: str, active: str) -> str:
     world_current = ' aria-current="page"' if active == "world" else ""
@@ -26,13 +32,17 @@ def _with_nav(html: str, active: str) -> str:
     tabs = (
         '<nav class="tabs" aria-label="Primary">'
         f'<a href="/" class="{"active" if active == "world" else ""}"'
-        f'{world_current}>World</a>'
+        f"{world_current}>World</a>"
         f'<a href="/logs" class="{"active" if active == "logs" else ""}"'
-        f'{logs_current}>Logs</a>'
+        f"{logs_current}>Logs</a>"
         "</nav>"
     )
-    html = html.replace('<div class="topbar-main">', f'<div class="topbar-main">{tabs}', 1)
-    html = html.replace("</head>", '  <link rel="stylesheet" href="/static/studio.css">\n</head>', 1)
+    html = html.replace(
+        '<div class="topbar-main">', f'<div class="topbar-main">{tabs}', 1
+    )
+    html = html.replace(
+        "</head>", '  <link rel="stylesheet" href="/static/studio.css">\n</head>', 1
+    )
     html = html.replace("<body>", f'<body class="view-{active}">', 1)
     html = html.replace(
         '<div class="brand"><span class="brand-mark"></span>infinite-dnd</div>',
@@ -95,11 +105,20 @@ def _build_handler(
                     self._send_json({"error": str(exc)}, HTTPStatus.NOT_FOUND)
             elif parsed.path.startswith("/api/logs/"):
                 name = unquote(parsed.path.removeprefix("/api/logs/"))
-                path = next((Path(item["path"]) for item in list_logs(log_dir) if item["name"] == name), None)
+                path = next(
+                    (
+                        Path(item["path"])
+                        for item in list_logs(log_dir)
+                        if item["name"] == name
+                    ),
+                    None,
+                )
                 if path:
                     self._send_json(load_session(path))
                 else:
-                    self._send_json({"error": f"Log not found: {name}"}, HTTPStatus.NOT_FOUND)
+                    self._send_json(
+                        {"error": f"Log not found: {name}"}, HTTPStatus.NOT_FOUND
+                    )
             else:
                 self._send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
 
@@ -111,8 +130,13 @@ def _build_handler(
                     actor_id = payload.get("actor_id")
                     if not isinstance(actor_id, str) or not actor_id:
                         raise ValueError("actor_id is required.")
-                    request_id = broker.begin(actor_id, WorldState.model_validate(payload.get("state")))
-                    self._send_json({"status": "waiting", "request_id": request_id}, HTTPStatus.CREATED)
+                    request_id = broker.begin(
+                        actor_id, WorldState.model_validate(payload.get("state"))
+                    )
+                    self._send_json(
+                        {"status": "waiting", "request_id": request_id},
+                        HTTPStatus.CREATED,
+                    )
                 elif parsed.path == "/api/play/action":
                     request_id, line = payload.get("request_id"), payload.get("line")
                     if not isinstance(request_id, str) or not isinstance(line, str):
@@ -163,7 +187,9 @@ def _build_handler(
             ):
                 raise FileNotFoundError(f"Run not found: {scenario}/{run_id}")
 
-        def _send(self, body: bytes, content_type: str, status: HTTPStatus = HTTPStatus.OK) -> None:
+        def _send(
+            self, body: bytes, content_type: str, status: HTTPStatus = HTTPStatus.OK
+        ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
@@ -181,8 +207,14 @@ def _build_handler(
                 return
             self._send(*asset)
 
-        def _send_json(self, payload: object, status: HTTPStatus = HTTPStatus.OK) -> None:
-            self._send(json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8", status)
+        def _send_json(
+            self, payload: object, status: HTTPStatus = HTTPStatus.OK
+        ) -> None:
+            self._send(
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8",
+                status,
+            )
 
         def log_message(self, format: str, *args) -> None:  # noqa: A003
             return
@@ -203,7 +235,9 @@ def _pick_port(host: str, preferred: int) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Launch the infinite-dnd app (World + Logs tabs).")
+    parser = argparse.ArgumentParser(
+        description="Launch the infinite-dnd app (World + Logs tabs)."
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR)

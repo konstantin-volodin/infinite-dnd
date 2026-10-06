@@ -23,7 +23,10 @@ DEFAULT_LOG_DIR = Path("logs")
 # Writer
 # ============================================================
 
-def _phase_timings(before: dict[str, float] | None, after: dict[str, float] | None) -> dict[str, Any]:
+
+def _phase_timings(
+    before: dict[str, float] | None, after: dict[str, float] | None
+) -> dict[str, Any]:
     """Split a run's server-side work into prefill vs decode from cumulative counter deltas."""
     if not before or not after:
         return {}
@@ -68,7 +71,9 @@ class Logger:
         self.turn = 0
         self._active_runs: dict[str, list[dict[str, int]]] = {}
         mode = "a" if append else "w"
-        self._file = (self.log_dir / f"{self.session_id}.log").open(mode, encoding="utf-8")
+        self._file = (self.log_dir / f"{self.session_id}.log").open(
+            mode, encoding="utf-8"
+        )
         self._log(
             "game_session_started",
             character_id=character_id,
@@ -102,8 +107,16 @@ class Logger:
             self._active_runs[label].pop()
             if not self._active_runs[label]:
                 del self._active_runs[label]
-            output_tps = round(stats["output_tokens"] / elapsed, 2) if elapsed and stats["output_tokens"] else None
-            metrics_after = self._metrics_reader() if metrics_before is not None else None
+            output_tps = (
+                round(stats["output_tokens"] / elapsed, 2)
+                if elapsed and stats["output_tokens"]
+                else None
+            )
+            metrics_after = (
+                self._metrics_reader()
+                if metrics_before is not None and self._metrics_reader is not None
+                else None
+            )
             self._log(
                 "agent_run_finished",
                 label=label,
@@ -117,11 +130,17 @@ class Logger:
 
     def log_messages(self, label: str, messages: list[Any]) -> None:
         try:
-            dumped = ModelMessagesTypeAdapter.dump_python(messages, mode="json", exclude_none=True)
+            dumped = ModelMessagesTypeAdapter.dump_python(
+                messages, mode="json", exclude_none=True
+            )
         except Exception:
             dumped = [str(msg) for msg in messages]
         for msg in dumped:
-            if isinstance(msg, dict) and label in self._active_runs and self._active_runs[label]:
+            if (
+                isinstance(msg, dict)
+                and label in self._active_runs
+                and self._active_runs[label]
+            ):
                 usage = msg.get("usage") or {}
                 stats = self._active_runs[label][-1]
                 for key in stats:
@@ -205,7 +224,9 @@ def _read_header(path: Path) -> dict[str, Any]:
                 # recorded. Post-turn snapshots are the completion boundary.
                 header["turns_completed"] = entry["turn"]
             elif event == "game_session_finished":
-                header["turns_completed"] = entry.get("turns_completed", header["turns_completed"])
+                header["turns_completed"] = entry.get(
+                    "turns_completed", header["turns_completed"]
+                )
     return header
 
 
@@ -250,11 +271,14 @@ def list_logs(path: Path) -> list[dict[str, Any]]:
 # Session loading
 # ============================================================
 
+
 def load_session(path: Path) -> dict[str, Any]:
     log_path = Path(path)
     entries = _load_entries(log_path)
     runs = _build_runs(entries)
-    turns = sorted({entry["turn"] for entry in entries if entry.get("turn") is not None})
+    turns = sorted(
+        {entry["turn"] for entry in entries if entry.get("turn") is not None}
+    )
     completed_turns = [
         entry["turn"]
         for entry in entries
@@ -262,11 +286,24 @@ def load_session(path: Path) -> dict[str, Any]:
     ]
     event_counts = Counter(entry["event"] for entry in entries)
 
-    started = next((entry for entry in entries if entry["event"] == "game_session_started"), None)
-    finished = next((entry for entry in reversed(entries) if entry["event"] == "game_session_finished"), None)
+    started = next(
+        (entry for entry in entries if entry["event"] == "game_session_started"), None
+    )
+    finished = next(
+        (
+            entry
+            for entry in reversed(entries)
+            if entry["event"] == "game_session_finished"
+        ),
+        None,
+    )
     first_time = _parse_time(entries[0].get("time")) if entries else None
     last_time = _parse_time(entries[-1].get("time")) if entries else None
-    duration_s = round((last_time - first_time).total_seconds(), 3) if first_time and last_time else None
+    duration_s = (
+        round((last_time - first_time).total_seconds(), 3)
+        if first_time and last_time
+        else None
+    )
 
     character_id = started["raw"].get("character_id") if started else None
     scenario, scenario_title = _resolve_scenario(
@@ -299,7 +336,9 @@ def load_session(path: Path) -> dict[str, Any]:
             "event_count": len(entries),
             "run_count": len(runs),
             "llm_message_count": event_counts.get("llm_message", 0),
-            "error_count": sum(event_counts.get(event, 0) for event in ("parse_error", "run_error")),
+            "error_count": sum(
+                event_counts.get(event, 0) for event in ("parse_error", "run_error")
+            ),
         },
         "runs": runs,
         "entries": entries,
@@ -338,7 +377,11 @@ def _load_entries(path: Path) -> list[dict[str, Any]]:
 
 
 def _normalize_entry(entry: dict[str, Any], line_number: int) -> dict[str, Any]:
-    digest = _digest_message(entry.get("message")) if entry.get("event") == "llm_message" else None
+    digest = (
+        _digest_message(entry.get("message"))
+        if entry.get("event") == "llm_message"
+        else None
+    )
     return {
         "line": line_number,
         "time": entry.get("time"),
@@ -357,7 +400,14 @@ def _normalize_entry(entry: dict[str, Any], line_number: int) -> dict[str, Any]:
     }
 
 
-_TIMING_KEYS = ("prefill_tokens", "prefill_s", "prefill_tps", "decode_tokens", "decode_s", "decode_tps")
+_TIMING_KEYS = (
+    "prefill_tokens",
+    "prefill_s",
+    "prefill_tps",
+    "decode_tokens",
+    "decode_s",
+    "decode_tps",
+)
 
 
 def _build_runs(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -389,7 +439,9 @@ def _build_runs(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if event == "llm_message" and label and label in open_runs and open_runs[label]:
             run = open_runs[label][-1]
             run["message_count"] += 1
-            run["tool_calls"] = _unique([*run["tool_calls"], *entry.get("tool_calls", [])])
+            run["tool_calls"] = _unique(
+                [*run["tool_calls"], *entry.get("tool_calls", [])]
+            )
             message_kind = entry.get("message_kind")
             if message_kind:
                 run["message_kinds"] = _unique([*run["message_kinds"], message_kind])
@@ -399,12 +451,21 @@ def _build_runs(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     run["tokens"][key] = run["tokens"].get(key, 0) + value
             continue
 
-        if event == "agent_run_finished" and label and label in open_runs and open_runs[label]:
+        if (
+            event == "agent_run_finished"
+            and label
+            and label in open_runs
+            and open_runs[label]
+        ):
             run = open_runs[label].pop()
             run["finished_at"] = entry.get("time")
             run["elapsed_s"] = entry["raw"].get("elapsed_s")
             run["output_tokens_per_s"] = entry["raw"].get("output_tokens_per_s")
-            timings = {key: entry["raw"][key] for key in _TIMING_KEYS if entry["raw"].get(key) is not None}
+            timings = {
+                key: entry["raw"][key]
+                for key in _TIMING_KEYS
+                if entry["raw"].get(key) is not None
+            }
             run["timings"] = timings or None
 
     return runs
@@ -436,7 +497,9 @@ def _summarize_entry(entry: dict[str, Any], digest: dict[str, Any] | None) -> st
         if digest["tool_calls"]:
             return f"{prefix} issued tool call: {', '.join(digest['tool_calls'])}."
         if digest["tool_returns"]:
-            return f"{prefix} received tool return: {', '.join(digest['tool_returns'])}."
+            return (
+                f"{prefix} received tool return: {', '.join(digest['tool_returns'])}."
+            )
         if digest["text"]:
             return f"{prefix}: {_compact(digest['text'], 160)}"
         return prefix
@@ -470,7 +533,12 @@ _USAGE_RE = re.compile(
     r"usage=RequestUsage\(input_tokens=(?P<input_tokens>\d+)(?:, cache_read_tokens=(?P<cache_read_tokens>\d+))?(?:, output_tokens=(?P<output_tokens>\d+))?",
     re.S,
 )
-_USAGE_KEYS = ("input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens")
+_USAGE_KEYS = (
+    "input_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "output_tokens",
+)
 
 
 def _digest_message(message: Any) -> dict[str, Any]:
@@ -483,12 +551,18 @@ def _digest_message(message: Any) -> dict[str, Any]:
 
 def _digest_structured(message: dict[str, Any]) -> dict[str, Any]:
     parts = message.get("parts") or []
-    tool_calls = _unique([p["tool_name"] for p in parts if p.get("part_kind") == "tool-call"])
-    tool_returns = _unique([p["tool_name"] for p in parts if p.get("part_kind") == "tool-return"])
+    tool_calls = _unique(
+        [p["tool_name"] for p in parts if p.get("part_kind") == "tool-call"]
+    )
+    tool_returns = _unique(
+        [p["tool_name"] for p in parts if p.get("part_kind") == "tool-return"]
+    )
 
     if message.get("kind") == "response":
         kind = "model_response"
-    elif tool_returns and all(p.get("part_kind") in ("tool-return", "retry-prompt") for p in parts):
+    elif tool_returns and all(
+        p.get("part_kind") in ("tool-return", "retry-prompt") for p in parts
+    ):
         kind = "tool_return"
     else:
         kind = "model_request"
@@ -501,7 +575,11 @@ def _digest_structured(message: dict[str, Any]) -> dict[str, Any]:
 
     text_chunks = []
     for part in parts:
-        content = part.get("content") if isinstance(part.get("content"), str) else part.get("args")
+        content = (
+            part.get("content")
+            if isinstance(part.get("content"), str)
+            else part.get("args")
+        )
         if isinstance(content, str) and content:
             text_chunks.append(content)
 
@@ -515,13 +593,24 @@ def _digest_structured(message: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _render_structured(message: dict[str, Any], parts: list[dict[str, Any]], usage: dict[str, int]) -> str:
+def _render_structured(
+    message: dict[str, Any], parts: list[dict[str, Any]], usage: dict[str, int]
+) -> str:
     title = "ModelResponse" if message.get("kind") == "response" else "ModelRequest"
-    meta = [str(message[key]) for key in ("model_name", "provider_name", "finish_reason") if message.get(key)]
+    meta = [
+        str(message[key])
+        for key in ("model_name", "provider_name", "finish_reason")
+        if message.get(key)
+    ]
     lines = [f"{title} ({', '.join(meta)})" if meta else title]
 
     if usage:
-        lines.append("usage: " + " · ".join(f"{key.removesuffix('_tokens')} {value}" for key, value in usage.items()))
+        lines.append(
+            "usage: "
+            + " · ".join(
+                f"{key.removesuffix('_tokens')} {value}" for key, value in usage.items()
+            )
+        )
 
     instructions = message.get("instructions")
     if instructions:
@@ -537,11 +626,19 @@ def _render_structured(message: dict[str, Any], parts: list[dict[str, Any]], usa
         if isinstance(args, str) and args:
             lines.extend(_indent_lines(_format_jsonish(args).splitlines() or [""]))
         elif args is not None:
-            lines.extend(_indent_lines(json.dumps(args, indent=2, ensure_ascii=False).splitlines()))
+            lines.extend(
+                _indent_lines(
+                    json.dumps(args, indent=2, ensure_ascii=False).splitlines()
+                )
+            )
         if isinstance(content, str) and content:
             lines.extend(_indent_lines(content.splitlines() or [""]))
         elif content is not None:
-            lines.extend(_indent_lines(json.dumps(content, indent=2, ensure_ascii=False).splitlines()))
+            lines.extend(
+                _indent_lines(
+                    json.dumps(content, indent=2, ensure_ascii=False).splitlines()
+                )
+            )
     return "\n".join(lines)
 
 
@@ -557,7 +654,11 @@ def _digest_legacy(message: str) -> dict[str, Any]:
 
     usage_match = _USAGE_RE.search(message)
     usage = (
-        {key: int(value) for key, value in usage_match.groupdict().items() if value is not None}
+        {
+            key: int(value)
+            for key, value in usage_match.groupdict().items()
+            if value is not None
+        }
         if usage_match
         else None
     )
@@ -575,6 +676,7 @@ def _digest_legacy(message: str) -> dict[str, Any]:
 # ============================================================
 # Formatting helpers
 # ============================================================
+
 
 def _display_time(value: Any) -> str:
     timestamp = _parse_time(value)
@@ -663,7 +765,7 @@ def _decode_log_text(value: str) -> str:
         value.replace("\\r\\n", "\n")
         .replace("\\n", "\n")
         .replace("\\t", "\t")
-        .replace("\\\"", '"')
+        .replace('\\"', '"')
         .replace("\\'", "'")
     )
 

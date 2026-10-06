@@ -1,4 +1,7 @@
-from src.agents.action_resolver.context import action_resolver_context, action_resolver_system
+from src.agents.action_resolver.context import (
+    action_resolver_context,
+    action_resolver_system,
+)
 from src.engine.state.models import Character, Location, Quest, WorldState
 
 
@@ -45,7 +48,9 @@ def test_action_context_hides_dangling_location_connections_without_mutating_sta
         characters={"hero": Character(id="hero", location="archive")},
     )
 
-    context = action_resolver_context(state.characters["hero"], state, description="search the archive")
+    context = action_resolver_context(
+        state.characters["hero"], state, description="search the archive"
+    )
 
     assert "- exits: alley" in context
     assert "missing-dock" not in context
@@ -81,7 +86,10 @@ def test_action_context_exposes_canonical_known_character_locations():
 def test_action_resolver_prompt_requires_meaningful_but_non_coercive_outcomes():
     prompt = action_resolver_system()
 
-    assert "produce concrete progress, expose a concrete obstacle, or open a specific new approach" in prompt
+    assert (
+        "produce concrete progress, expose a concrete obstacle, or open a specific new approach"
+        in prompt
+    )
     assert "never choose the character's next action" in prompt
     assert "do not invent a consolation prize" in prompt
     assert "known character locations are canonical" in prompt

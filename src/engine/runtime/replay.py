@@ -57,16 +57,22 @@ class ReplayTape:
         else:
             self._entries = self._load()
 
-    def resolve_context(self, scenario: str | None, character_id: str | None) -> tuple[str | None, str | None]:
+    def resolve_context(
+        self, scenario: str | None, character_id: str | None
+    ) -> tuple[str | None, str | None]:
         """Supply recorded run identity during playback and reject conflicts."""
         if not self.is_playback:
             return scenario, character_id
         if self._scenario is None or self._character_id is None:
             raise ReplayError(f"Replay tape {self.path} has no run context metadata")
         if scenario is not None and scenario != self._scenario:
-            raise ReplayError(f"Replay scenario is {self._scenario!r}, not requested {scenario!r}")
+            raise ReplayError(
+                f"Replay scenario is {self._scenario!r}, not requested {scenario!r}"
+            )
         if character_id is not None and character_id != self._character_id:
-            raise ReplayError(f"Replay character is {self._character_id!r}, not requested {character_id!r}")
+            raise ReplayError(
+                f"Replay character is {self._character_id!r}, not requested {character_id!r}"
+            )
         return self._scenario, self._character_id
 
     def bind_context(self, scenario: str, character_id: str) -> None:
@@ -76,7 +82,9 @@ class ReplayTape:
             return
         if self._scenario is not None:
             if (scenario, character_id) != (self._scenario, self._character_id):
-                raise ReplayError("A recording tape cannot be rebound to a different run")
+                raise ReplayError(
+                    "A recording tape cannot be rebound to a different run"
+                )
             return
         self._scenario, self._character_id = scenario, character_id
         entry = {"kind": "context", "scenario": scenario, "character_id": character_id}
@@ -99,16 +107,28 @@ class ReplayTape:
     def remaining(self) -> int:
         return len(self._entries) - self._position if self.is_playback else 0
 
-    def character(self, actor_id: str, output: CharacterTool | None = None) -> CharacterTool | None:
-        payload = self._exchange("character", actor_id, None if output is None else output.model_dump(mode="json"))
+    def character(
+        self, actor_id: str, output: CharacterTool | None = None
+    ) -> CharacterTool | None:
+        payload = self._exchange(
+            "character",
+            actor_id,
+            None if output is None else output.model_dump(mode="json"),
+        )
         return None if payload is None else _CHARACTER_ADAPTER.validate_python(payload)
 
     def dm(self, output: DMResult | None = None) -> DMResult:
-        payload = self._exchange("dm", "dm", None if output is None else {
-            "creates": [item.model_dump(mode="json") for item in output.creates],
-            "modifies": [item.model_dump(mode="json") for item in output.modifies],
-            "minutes": output.minutes,
-        })
+        payload = self._exchange(
+            "dm",
+            "dm",
+            None
+            if output is None
+            else {
+                "creates": [item.model_dump(mode="json") for item in output.creates],
+                "modifies": [item.model_dump(mode="json") for item in output.modifies],
+                "minutes": output.minutes,
+            },
+        )
         return DMResult(
             creates=[Create.model_validate(item) for item in payload["creates"]],
             modifies=[Modify.model_validate(item) for item in payload["modifies"]],
@@ -118,17 +138,25 @@ class ReplayTape:
     def chronicle(self, output: str | None = None) -> str:
         return str(self._exchange("chronicle", "chronicle", output))
 
-    def action_resolution(self, actor_id: str, state: WorldState, result: str | None = None) -> str:
+    def action_resolution(
+        self, actor_id: str, state: WorldState, result: str | None = None
+    ) -> str:
         """Record or restore the stateful result of a free-form Action.
 
         Action resolution may issue several state-mutating model tools. A state
         snapshot at this boundary is both smaller and more stable than replaying
         pydantic-ai's internal message/tool protocol.
         """
-        payload = self._exchange("action_resolution", actor_id, {
-            "result": result,
-            "state": state.model_dump(mode="json"),
-        } if self.mode == "record" else None)
+        payload = self._exchange(
+            "action_resolution",
+            actor_id,
+            {
+                "result": result,
+                "state": state.model_dump(mode="json"),
+            }
+            if self.mode == "record"
+            else None,
+        )
         if self.is_playback:
             restored = WorldState.model_validate(payload["state"])
             for field_name in WorldState.model_fields:
@@ -136,22 +164,34 @@ class ReplayTape:
         return str(payload.get("result") or "")
 
     def director(self, output: DirectorResult | None = None) -> DirectorResult | None:
-        payload = self._exchange("director", "director", None if output is None else {
-            "event": output.event,
-            "create": output.create.model_dump(mode="json") if output.create else None,
-            "quest_id": output.quest_id,
-        })
+        payload = self._exchange(
+            "director",
+            "director",
+            None
+            if output is None
+            else {
+                "event": output.event,
+                "create": output.create.model_dump(mode="json")
+                if output.create
+                else None,
+                "quest_id": output.quest_id,
+            },
+        )
         if payload is None:
             return None
         return DirectorResult(
             event=str(payload["event"]),
-            create=Create.model_validate(payload["create"]) if payload.get("create") else None,
+            create=Create.model_validate(payload["create"])
+            if payload.get("create")
+            else None,
             quest_id=payload.get("quest_id"),
         )
 
     def assert_consumed(self) -> None:
         if self.is_playback and self.remaining:
-            raise ReplayError(f"Replay finished with {self.remaining} unconsumed output(s) in {self.path}")
+            raise ReplayError(
+                f"Replay finished with {self.remaining} unconsumed output(s) in {self.path}"
+            )
 
     def _exchange(self, kind: ReplayKind, key: str, output: Any) -> Any:
         if self.mode == "record":
@@ -161,7 +201,9 @@ class ReplayTape:
             return output
 
         if self._position >= len(self._entries):
-            raise ReplayError(f"Replay exhausted while requesting {kind}:{key} at position {self._position}")
+            raise ReplayError(
+                f"Replay exhausted while requesting {kind}:{key} at position {self._position}"
+            )
         entry = self._entries[self._position]
         self._position += 1
         if (entry.kind, entry.key) != (kind, key):
@@ -185,13 +227,25 @@ class ReplayTape:
                 kind = raw["kind"]
                 if kind == "context":
                     if self._scenario is not None or entries:
-                        raise ValueError("context must be the first and only context entry")
+                        raise ValueError(
+                            "context must be the first and only context entry"
+                        )
                     self._scenario = str(raw["scenario"])
                     self._character_id = str(raw["character_id"])
                     continue
-                if kind not in {"character", "action_resolution", "dm", "director", "chronicle"}:
+                if kind not in {
+                    "character",
+                    "action_resolution",
+                    "dm",
+                    "director",
+                    "chronicle",
+                }:
                     raise ValueError(f"unknown kind {kind!r}")
-                entries.append(_Entry(kind=kind, key=str(raw["key"]), output=raw["output"]))
+                entries.append(
+                    _Entry(kind=kind, key=str(raw["key"]), output=raw["output"])
+                )
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                raise ReplayError(f"Invalid replay entry on line {index} of {self.path}: {exc}") from exc
+                raise ReplayError(
+                    f"Invalid replay entry on line {index} of {self.path}: {exc}"
+                ) from exc
         return entries

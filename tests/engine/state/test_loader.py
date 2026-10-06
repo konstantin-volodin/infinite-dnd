@@ -10,19 +10,29 @@ from src.engine.state.operations import WorldOperations
 from src.world import list_scenarios
 
 
+def test_default_state_directory_follows_working_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    manager = StateManager(scenario="smuggler-cove")
+    assert manager.scenario_dir == tmp_path / "world-state" / "smuggler-cove"
+
+
 @pytest.mark.parametrize("scenario", list_scenarios())
 def test_init_state_for_scenario(scenario, tmp_path):
     manager = StateManager(scenario=scenario, state_dir=str(tmp_path))
     state = manager.init_state()
 
     assert manager.scenario == scenario
-    assert manager.manifest["pc"] in state.characters, f"manifest pc '{manager.manifest['pc']}' not in characters for {scenario}"
+    assert manager.manifest["pc"] in state.characters, (
+        f"manifest pc '{manager.manifest['pc']}' not in characters for {scenario}"
+    )
     assert isinstance(state, WorldState)
 
     for char_id, char in state.characters.items():
         assert isinstance(char, Character)
         assert char.id == char_id
-        assert char.location in state.locations, f"{char_id} placed at unknown location {char.location}"
+        assert char.location in state.locations, (
+            f"{char_id} placed at unknown location {char.location}"
+        )
 
     for loc_id, loc in state.locations.items():
         assert isinstance(loc, Location)
@@ -34,7 +44,9 @@ def test_init_state_for_scenario(scenario, tmp_path):
         assert isinstance(quest, Quest)
         assert quest.id == quest_id
         if quest.owner:
-            assert quest.owner in state.characters, f"quest {quest_id} owned by unknown character {quest.owner}"
+            assert quest.owner in state.characters, (
+                f"quest {quest_id} owned by unknown character {quest.owner}"
+            )
 
 
 def test_save_load_round_trip(tmp_path):
@@ -59,7 +71,9 @@ def test_save_state_atomically_replaces_existing_snapshot(tmp_path):
     assert list(manager.state_dir.glob("*.tmp")) == []
 
 
-def test_save_state_leaves_existing_snapshot_intact_if_replace_fails(tmp_path, monkeypatch):
+def test_save_state_leaves_existing_snapshot_intact_if_replace_fails(
+    tmp_path, monkeypatch
+):
     manager = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
     state = manager.init_state()
     state_file = manager.state_dir / f"world_state_{state.time}.json"
@@ -81,7 +95,9 @@ def test_latest_snapshot_name_uses_numeric_order(tmp_path):
     manager = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
     assert manager.latest_snapshot_name() is None
     for tick in (2, 10, 3):
-        (manager.state_dir / f"world_state_{tick}.json").write_text("{}", encoding="utf-8")
+        (manager.state_dir / f"world_state_{tick}.json").write_text(
+            "{}", encoding="utf-8"
+        )
     (manager.state_dir / "world_state_bad.json").write_text("{}", encoding="utf-8")
     assert manager.latest_snapshot_name() == "world_state_10.json"
 
@@ -91,14 +107,20 @@ def test_latest_snapshot_name_skips_corrupt_newer_snapshot(tmp_path):
     state = manager.init_state()
     state.time = 2
     manager.save_state(state)
-    (manager.state_dir / "world_state_3.json").write_text("incomplete", encoding="utf-8")
+    (manager.state_dir / "world_state_3.json").write_text(
+        "incomplete", encoding="utf-8"
+    )
 
     assert manager.latest_snapshot_name() == "world_state_2.json"
 
 
 def test_distinct_run_ids_do_not_collide(tmp_path):
-    manager_a = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="run-a")
-    manager_b = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="run-b")
+    manager_a = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), run_id="run-a"
+    )
+    manager_b = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), run_id="run-b"
+    )
 
     assert manager_a.state_dir != manager_b.state_dir
 
@@ -110,9 +132,15 @@ def test_distinct_run_ids_do_not_collide(tmp_path):
 
 
 def test_resume_selects_latest_run_with_snapshots(tmp_path):
-    older = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="older")
-    newer = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="newer")
-    empty = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="empty")
+    older = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), run_id="older"
+    )
+    newer = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), run_id="newer"
+    )
+    empty = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), run_id="empty"
+    )
 
     older.save_state(older.init_state())
     newer_state = newer.init_state()
@@ -125,7 +153,9 @@ def test_resume_selects_latest_run_with_snapshots(tmp_path):
     older_snapshot_time = older_snapshot.stat().st_mtime - 10
     os.utime(older_snapshot, (older_snapshot_time, older_snapshot_time))
 
-    resumed = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), resume=True)
+    resumed = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), resume=True
+    )
 
     assert resumed.run_id == "newer"
     assert resumed.latest_snapshot_name() == "world_state_2.json"
@@ -133,12 +163,20 @@ def test_resume_selects_latest_run_with_snapshots(tmp_path):
 
 
 def test_resume_ignores_newer_run_with_only_corrupt_snapshots(tmp_path):
-    intact = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="intact")
-    corrupt = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), run_id="corrupt")
+    intact = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), run_id="intact"
+    )
+    corrupt = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), run_id="corrupt"
+    )
     intact.save_state(intact.init_state())
-    (corrupt.state_dir / "world_state_1.json").write_text("incomplete", encoding="utf-8")
+    (corrupt.state_dir / "world_state_1.json").write_text(
+        "incomplete", encoding="utf-8"
+    )
 
-    resumed = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path), resume=True)
+    resumed = StateManager(
+        scenario="smuggler-cove", state_dir=str(tmp_path), resume=True
+    )
 
     assert resumed.run_id == "intact"
     assert resumed.latest_snapshot_name() == "world_state_0.json"
@@ -157,11 +195,25 @@ def test_run_id_auto_generated_when_omitted(tmp_path):
 def test_init_state_backcompat_quest_without_plan(tmp_path, monkeypatch):
     """Old scenario quests.json files (pre-plan) must still load — pydantic defaults fill plan/current_step."""
     manager = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
-    legacy_quests = [{"id": "legacy-quest", "title": "Old Quest", "description": "no plan here", "owner": "", "status": "active"}]
+    legacy_quests = [
+        {
+            "id": "legacy-quest",
+            "title": "Old Quest",
+            "description": "no plan here",
+            "owner": "",
+            "status": "active",
+        }
+    ]
 
     original_read_json = manager.read_json
+
     def fake_read_json(path):
-        return legacy_quests if str(path).endswith("quests.json") else original_read_json(path)
+        return (
+            legacy_quests
+            if str(path).endswith("quests.json")
+            else original_read_json(path)
+        )
+
     monkeypatch.setattr(manager, "read_json", fake_read_json)
 
     state = manager.init_state()
@@ -172,7 +224,9 @@ def test_init_state_backcompat_quest_without_plan(tmp_path, monkeypatch):
 
 
 def test_missing_brother_requires_finding_kaelen_after_following_clues(tmp_path):
-    state = StateManager(scenario="missing-brother", state_dir=str(tmp_path)).init_state()
+    state = StateManager(
+        scenario="missing-brother", state_dir=str(tmp_path)
+    ).init_state()
     quest = state.quests["find-brother"]
     ops = WorldOperations(state)
 
@@ -218,7 +272,9 @@ def test_load_state_backcompat_without_director_fields(tmp_path):
     data = json.loads(manager.init_state().model_dump_json())
     del data["director_interventions"]
     del data["last_quest_advance_time"]
-    (manager.state_dir / "world_state_5.json").write_text(json.dumps(data), encoding="utf-8")
+    (manager.state_dir / "world_state_5.json").write_text(
+        json.dumps(data), encoding="utf-8"
+    )
 
     loaded = manager.load_state(world_state_file="world_state_5.json")
     assert loaded.director_interventions == {}
@@ -230,7 +286,9 @@ def test_load_state_backcompat_without_chronicle(tmp_path):
     manager = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
     data = json.loads(manager.init_state().model_dump_json())
     del data["chronicle"]
-    (manager.state_dir / "world_state_5.json").write_text(json.dumps(data), encoding="utf-8")
+    (manager.state_dir / "world_state_5.json").write_text(
+        json.dumps(data), encoding="utf-8"
+    )
 
     loaded = manager.load_state(world_state_file="world_state_5.json")
     assert loaded.chronicle == []

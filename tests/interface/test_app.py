@@ -19,7 +19,9 @@ def test_nav_marks_active_tab():
 
 
 def test_shell_links_shared_studio_stylesheet():
-    html = _with_nav('<head></head><body><div class="topbar-main"></div></body>', "world")
+    html = _with_nav(
+        '<head></head><body><div class="topbar-main"></div></body>', "world"
+    )
     assert 'href="/static/studio.css"' in html
     assert 'class="view-world"' in html
 
@@ -37,16 +39,24 @@ def test_world_controls_have_accessible_names_and_dialog_semantics():
     assert 'id="tick-prev" type="button"' in html
     assert 'id="map-svg"' in html and 'aria-label="World locations"' in html
     assert 'id="char-drawer" role="dialog" aria-modal="true"' in html
-    assert 'id="play-input"' in html and 'aria-describedby="play-help play-error"' in html
+    assert (
+        'id="play-input"' in html and 'aria-describedby="play-help play-error"' in html
+    )
 
 
 def test_dynamic_world_controls_support_keyboard_and_focus_restoration():
     script = read_asset("static/world.js")
-    assert 'data-loc="${escapeHtml(n.id)}"' in script and 'role="button" tabindex="0"' in script
-    assert 'data-char="${escapeHtml(c.id)}"' in script and 'aria-haspopup="dialog"' in script
+    assert (
+        'data-loc="${escapeHtml(n.id)}"' in script
+        and 'role="button" tabindex="0"' in script
+    )
+    assert (
+        'data-char="${escapeHtml(c.id)}"' in script
+        and 'aria-haspopup="dialog"' in script
+    )
     assert 'dom.mapSvg.addEventListener("keydown"' in script
     assert 'dom.charGrid.addEventListener("keydown"' in script
-    assert 'state.lastDialogFocus.focus()' in script
+    assert "state.lastDialogFocus.focus()" in script
 
 
 def test_play_panel_connects_a_submitted_move_to_the_next_story_event():
@@ -56,10 +66,18 @@ def test_play_panel_connects_a_submitted_move_to_the_next_story_event():
     assert 'class="play-panel collapsed"' not in html
     assert 'id="play-toggle"' not in html
     assert 'class="sr-only" id="play-title"' in html
-    assert 'class="play-alert" id="play-situation" role="status" aria-live="polite" hidden' in html
+    assert (
+        'class="play-alert" id="play-situation" role="status" aria-live="polite" hidden'
+        in html
+    )
     assert "Player controls are disabled" in html
     css = read_asset("static/world.css")
-    assert "left:50%" in css and "transform:translateX(-50%)" in css and ".play-alert" in css and ".situation-row" in css
+    assert (
+        "left:50%" in css
+        and "transform:translateX(-50%)" in css
+        and ".play-alert" in css
+        and ".situation-row" in css
+    )
     assert "min-height:48px" in css and "font-size:15px" in css
     assert "prefers-reduced-motion" in css and "story-event-in" in css
     assert 'id="play-trail" aria-live="polite" hidden' in html
@@ -81,9 +99,9 @@ def test_play_panel_surfaces_contextual_actions_in_the_action_row():
     assert "function contextualChoices(view, actorId)" in script
     assert "world.locations[destination]" in script
     assert "character.location === actor.location" in script
-    assert 'dom.playInput.value = suggestion.dataset.action' in script
+    assert "dom.playInput.value = suggestion.dataset.action" in script
     assert 'dom.playSuggestions.addEventListener("click"' in script
-    assert 'dom.playForm.dispatchEvent' not in script
+    assert "dom.playForm.dispatchEvent" not in script
     assert "Player controls are disabled" in html
 
 
@@ -128,8 +146,12 @@ def test_series_math(tmp_path):
     run_dir = tmp_path / "demo" / "run-1"
     run_dir.mkdir(parents=True)
     for tick, hp, xp, gold in [(0, 5, 0, 1), (2, 3, 10, 4)]:
-        payload = {"characters": {"hero": {"stats": {"hp": hp, "xp": xp, "gold": gold}}}}
-        (run_dir / f"world_state_{tick}.json").write_text(json.dumps(payload), encoding="utf-8")
+        payload = {
+            "characters": {"hero": {"stats": {"hp": hp, "xp": xp, "gold": gold}}}
+        }
+        (run_dir / f"world_state_{tick}.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
     assert load_series(tmp_path, "demo", "run-1")["hero"] == [
         {"tick": 0, "hp": 5, "xp": 0, "gold": 1},
         {"tick": 2, "hp": 3, "xp": 10, "gold": 4},

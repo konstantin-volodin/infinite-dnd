@@ -52,13 +52,19 @@ class PlayBroker:
             if turn is None or (request_id is not None and turn.id != request_id):
                 return {"status": "idle"}
             if turn.action is not None:
-                return {"status": "submitted", "request_id": turn.id, "action": turn.action.model_dump()}
+                return {
+                    "status": "submitted",
+                    "request_id": turn.id,
+                    "action": turn.action.model_dump(),
+                }
             return {
                 "status": "waiting",
                 "request_id": turn.id,
                 "actor_id": turn.actor_id,
                 "actor_name": turn.actor_id,
-                "situation": _describe_situation(turn.actor_id, turn.state, include_help=False).strip(),
+                "situation": _describe_situation(
+                    turn.actor_id, turn.state, include_help=False
+                ).strip(),
             }
 
     def submit(self, request_id: str, line: str) -> dict[str, Any]:
@@ -92,7 +98,9 @@ def _json_request(url: str, payload: dict[str, Any] | None = None) -> dict[str, 
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.load(response)
     except urllib.error.URLError as exc:
-        raise ConnectionError(f"Cannot reach the web dashboard at {url}: {exc.reason}") from exc
+        raise ConnectionError(
+            f"Cannot reach the web dashboard at {url}: {exc.reason}"
+        ) from exc
 
 
 def make_web_pc_controller(base_url: str = "http://127.0.0.1:8765"):
@@ -108,15 +116,23 @@ def make_web_pc_controller(base_url: str = "http://127.0.0.1:8765"):
         request_id = started["request_id"]
         try:
             while True:
-                result = await asyncio.to_thread(_json_request, f"{base_url}/api/play/request/{request_id}")
+                result = await asyncio.to_thread(
+                    _json_request, f"{base_url}/api/play/request/{request_id}"
+                )
                 if result.get("status") == "submitted":
                     return _TOOL_ADAPTER.validate_python(result["action"])
                 if result.get("status") != "waiting":
-                    raise RuntimeError("The dashboard discarded the pending player turn.")
+                    raise RuntimeError(
+                        "The dashboard discarded the pending player turn."
+                    )
                 await asyncio.sleep(0.35)
         finally:
             try:
-                await asyncio.to_thread(_json_request, f"{base_url}/api/play/finish", {"request_id": request_id})
+                await asyncio.to_thread(
+                    _json_request,
+                    f"{base_url}/api/play/finish",
+                    {"request_id": request_id},
+                )
             except ConnectionError:
                 pass
 

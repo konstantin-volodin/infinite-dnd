@@ -10,10 +10,25 @@ from io import TextIOWrapper
 from pydantic_ai.exceptions import AgentRunError, UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
-from src.engine.state import StateManager, WorldOperations, WorldState, is_dialogue, resolve_character, slugify
+from src.engine.state import (
+    StateManager,
+    WorldOperations,
+    WorldState,
+    is_dialogue,
+    resolve_character,
+    slugify,
+)
 from src.engine.state.models import HistoryEvent, Quest
 from src.agents.character.agent import CharacterDeps, agent as character_agent
-from src.agents.character.tools import Action, Attack, CharacterTool, Check, Speak, Travel, Wait
+from src.agents.character.tools import (
+    Action,
+    Attack,
+    CharacterTool,
+    Check,
+    Speak,
+    Travel,
+    Wait,
+)
 from src.agents.dm.agent import DMDeps, DMResult, agent as dm_agent
 from src.agents.dm.tools import Create, Modify
 from src.agents.dm.director import DirectorDeps, agent as director_agent
@@ -47,7 +62,21 @@ _FINAL_OBJECTIVE_VERB_FORMS = {
     "track": {"track", "tracks", "tracked"},
 }
 _FINAL_OBJECTIVE_STOP_WORDS = {
-    "a", "an", "and", "at", "before", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with",
+    "a",
+    "an",
+    "and",
+    "at",
+    "before",
+    "by",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
 }
 _FINAL_OBJECTIVE_DISCOVERY_PATTERN = re.compile(
     r"\b(?:clue|clues|lead|whereabouts|destination)\b"
@@ -64,10 +93,26 @@ _FINAL_OBJECTIVE_INDIRECT_FIND_PATTERN = re.compile(
     r"\b(?:description|descriptions|evidence|information|portrait|portraits|proof|record|records|"
     r"report|reports|poster|posters|rumor|rumors|rumour|rumours|sign|signs|testimony|trace|traces)\b"
 )
-_FINAL_OBJECTIVE_CONSTRAINT_PATTERN = re.compile(r"\b(?:after|at|before|by|during|until)\b")
+_FINAL_OBJECTIVE_CONSTRAINT_PATTERN = re.compile(
+    r"\b(?:after|at|before|by|during|until)\b"
+)
 _OBJECTIVE_GENERIC_WORDS = {
-    "about", "around", "clue", "clues", "evidence", "hidden", "information", "known",
-    "last", "movement", "movements", "proof", "sign", "signs", "unusual", "whereabouts",
+    "about",
+    "around",
+    "clue",
+    "clues",
+    "evidence",
+    "hidden",
+    "information",
+    "known",
+    "last",
+    "movement",
+    "movements",
+    "proof",
+    "sign",
+    "signs",
+    "unusual",
+    "whereabouts",
 }
 _REFERENTIAL_CONTACT_OBJECTIVE_PATTERN = re.compile(
     r"^(?:find|locate|track\s+down)\s+(?:the\s+)?(?:person|somebody|someone|who|whoever|witness)\b"
@@ -92,7 +137,21 @@ _FACTION_ACCELERATION_CAUSE_PATTERN = re.compile(
     r"spots?|spotted|tells?|told|warns?|warned|witnesses?|witnessed)\b"
 )
 _FACTION_ACCELERATION_STOP_WORDS = {
-    "a", "an", "and", "anyone", "at", "before", "can", "for", "from", "in", "of", "on", "or", "the", "to",
+    "a",
+    "an",
+    "and",
+    "anyone",
+    "at",
+    "before",
+    "can",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
 }
 _NON_PERSON_NPC_NAME_PATTERN = re.compile(
     r"\b(?:army|cartel|clan|company|consortium|corporation|crew|cult|faction|gang|guild|"
@@ -100,13 +159,25 @@ _NON_PERSON_NPC_NAME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _VAGUE_LOCATION_WORDS = {
-    "area", "destination", "downriver", "elsewhere", "location", "nearby",
-    "place", "region", "site", "somewhere", "unknown", "unnamed", "upriver",
+    "area",
+    "destination",
+    "downriver",
+    "elsewhere",
+    "location",
+    "nearby",
+    "place",
+    "region",
+    "site",
+    "somewhere",
+    "unknown",
+    "unnamed",
+    "upriver",
 }
 _INDEFINITE_LOCATION_WORDS = {"a", "an", "another", "some"}
 
 
 # ─── Scheduler ────────────────────────────────────────────────
+
 
 def _awaiting_response(state: WorldState, character_id: str) -> bool:
     """Whether the latest speech involving the character directly addressed them."""
@@ -117,10 +188,7 @@ def _awaiting_response(state: WorldState, character_id: str) -> bool:
             or not event.text.startswith(f"{event.characters[0]} says")
         ):
             continue
-        return (
-            len(event.characters) > 1
-            and event.characters[-1] == character_id
-        )
+        return len(event.characters) > 1 and event.characters[-1] == character_id
     return False
 
 
@@ -174,7 +242,9 @@ def _describe_tool(tool: CharacterTool) -> str:
     if isinstance(tool, Attack):
         return f"attack → {tool.target}"
     if isinstance(tool, Check):
-        target = f" vs {tool.opponent}" if tool.opponent else f" vs DC {tool.difficulty}"
+        target = (
+            f" vs {tool.opponent}" if tool.opponent else f" vs DC {tool.difficulty}"
+        )
         return f"check ({tool.ability}{target}): {tool.description}"
     if isinstance(tool, Action):
         suffix = f" ({tool.target})" if tool.target else ""
@@ -197,8 +267,7 @@ def _can_anchor_new_npc(create: Create, new_events: list[HistoryEvent]) -> bool:
 
     name = slugify(create.name)
     named_events = [
-        event for event in new_events
-        if _mentions_npc_name(event.text, name)
+        event for event in new_events if _mentions_npc_name(event.text, name)
     ]
     if not named_events:
         return False
@@ -225,8 +294,7 @@ def _can_anchor_new_npc(create: Create, new_events: list[HistoryEvent]) -> bool:
         # mention. Do not materialize someone merely named in dialogue or
         # narration at the speaker's location.
         named_participant = any(
-            _mentions_npc_name(character_id, name)
-            for character_id in event.characters
+            _mentions_npc_name(character_id, name) for character_id in event.characters
         )
         if named_participant and slugify(event.location) == anchor:
             return True
@@ -247,7 +315,7 @@ def _can_anchor_new_location(create: Create, new_events: list[HistoryEvent]) -> 
     for event in new_events:
         event_slug = slugify(event.text)
         for mention in mention_pattern.finditer(event_slug):
-            prefix_words = event_slug[:mention.start()].strip("-").split("-")
+            prefix_words = event_slug[: mention.start()].strip("-").split("-")
             if prefix_words and prefix_words[-1] in _INDEFINITE_LOCATION_WORDS:
                 continue
             return True
@@ -309,6 +377,7 @@ def _log_rejected_world_modification(
 
 # ─── Stall detection ──────────────────────────────────────────
 
+
 def _minimum_action_minutes(tool: CharacterTool) -> int:
     """Keep direct actions consequential when the DM underestimates their duration."""
     if isinstance(tool, Travel):
@@ -316,7 +385,8 @@ def _minimum_action_minutes(tool: CharacterTool) -> int:
     if isinstance(tool, Wait):
         return 5
     if isinstance(tool, Action) and any(
-        verb in tool.description.lower() for verb in ("search", "examine", "inspect", "investigate")
+        verb in tool.description.lower()
+        for verb in ("search", "examine", "inspect", "investigate")
     ):
         return 5
     return 1
@@ -343,7 +413,11 @@ def _can_accelerate_faction_clock(
     if not faction:
         return False
     clock = next(
-        (candidate for candidate in faction.clocks if slugify(candidate.id) == slugify(clock_id)),
+        (
+            candidate
+            for candidate in faction.clocks
+            if slugify(candidate.id) == slugify(clock_id)
+        ),
         None,
     )
     if not clock or not clock.event_acceleration or not events:
@@ -361,7 +435,9 @@ def _can_accelerate_faction_clock(
     # merely finding evidence about a faction must not accelerate its plans.
     if isinstance(tool, (Attack, Speak)) and tool.target:
         target = resolve_character(state, tool.target)
-        event_characters = {character_id for event in events for character_id in event.characters}
+        event_characters = {
+            character_id for event in events for character_id in event.characters
+        }
         if target and target.id in event_characters:
             target_words = _word_roots(f"{target.id} {target.role}")
             if target_words & faction_words:
@@ -386,7 +462,7 @@ def _claim_mentions_target(claim: str, target_id: str) -> bool:
     return any(
         all(len(word) == 1 for word in window) and "".join(window) == initials
         for index in range(len(claim_words) - width + 1)
-        if (window := claim_words[index:index + width])
+        if (window := claim_words[index : index + width])
     )
 
 
@@ -399,18 +475,38 @@ def _can_advance_final_objective(
     """Require owner-attributed evidence that the final planned objective happened."""
     if not quest.plan or quest.current_step != len(quest.plan) - 1:
         return True
-    if tool.actor != quest.owner or not isinstance(tool, (Action, Attack, Check, Speak)):
+    if tool.actor != quest.owner or not isinstance(
+        tool, (Action, Attack, Check, Speak)
+    ):
         return False
 
     objective_verb = quest.plan[quest.current_step].split(maxsplit=1)[0].casefold()
     verb_forms = _FINAL_OBJECTIVE_VERB_FORMS.get(objective_verb, {objective_verb})
     if objective_verb == "recover":
-        verb_forms |= {"pick", "picks", "picked", "take", "takes", "took", "receive", "receives", "received"}
+        verb_forms |= {
+            "pick",
+            "picks",
+            "picked",
+            "take",
+            "takes",
+            "took",
+            "receive",
+            "receives",
+            "received",
+        }
     objective_text = quest.plan[quest.current_step].casefold()
-    target_text = _FINAL_OBJECTIVE_CONSTRAINT_PATTERN.split(objective_text, maxsplit=1)[0]
+    target_text = _FINAL_OBJECTIVE_CONSTRAINT_PATTERN.split(objective_text, maxsplit=1)[
+        0
+    ]
     objective_words = set(re.findall(r"[a-z]+", target_text))
-    objective_verbs = {verb for verb in _FINAL_OBJECTIVE_VERB_FORMS if verb in objective_words}
-    alternative_verbs = objective_verbs - {objective_verb} if re.search(r"\bor\b", target_text) else set()
+    objective_verbs = {
+        verb for verb in _FINAL_OBJECTIVE_VERB_FORMS if verb in objective_words
+    }
+    alternative_verbs = (
+        objective_verbs - {objective_verb}
+        if re.search(r"\bor\b", target_text)
+        else set()
+    )
     target_words = objective_words - _FINAL_OBJECTIVE_STOP_WORDS - objective_verbs
     alternative_forms = {
         form for verb in alternative_verbs for form in _FINAL_OBJECTIVE_VERB_FORMS[verb]
@@ -426,12 +522,20 @@ def _can_advance_final_objective(
         if quest.owner not in event.characters or not resolution_pattern.match(text):
             continue
         if _FINAL_OBJECTIVE_DISCOVERY_PATTERN.search(text) or (
-            objective_verb in {"find", "recover"} and _FINAL_OBJECTIVE_INDIRECT_FIND_PATTERN.search(text)
+            objective_verb in {"find", "recover"}
+            and _FINAL_OBJECTIVE_INDIRECT_FIND_PATTERN.search(text)
         ):
             continue
-        if resolution_forms & words and target_words <= words and (
-            not alternative_verbs
-            or any(_FINAL_OBJECTIVE_VERB_FORMS[verb] & words for verb in alternative_verbs)
+        if (
+            resolution_forms & words
+            and target_words <= words
+            and (
+                not alternative_verbs
+                or any(
+                    _FINAL_OBJECTIVE_VERB_FORMS[verb] & words
+                    for verb in alternative_verbs
+                )
+            )
         ):
             return True
 
@@ -458,7 +562,9 @@ def _can_advance_final_objective(
         rf"^(?:{re.escape(quest.owner.casefold())}\s+)?"
         rf"(?:has\s+|have\s+)?(?:{'|'.join(resolution_forms)})\b"
     )
-    if not claim_pattern.match(claim) or _FINAL_OBJECTIVE_DISCOVERY_PATTERN.search(claim):
+    if not claim_pattern.match(claim) or _FINAL_OBJECTIVE_DISCOVERY_PATTERN.search(
+        claim
+    ):
         return False
     if alternative_verbs and not any(
         _FINAL_OBJECTIVE_VERB_FORMS[verb] & claim_words for verb in alternative_verbs
@@ -478,14 +584,18 @@ def _can_advance_final_objective(
         return False
     objective_anchor = target_words & claim_words
     return target_words <= claim_words or bool(
-        objective_anchor and target_id_words and _claim_mentions_target(claim, tool.target)
+        objective_anchor
+        and target_id_words
+        and _claim_mentions_target(claim, tool.target)
     )
 
 
 def _word_roots(text: str) -> set[str]:
     """Normalize simple plurals so objectives and generated prose can be compared."""
     words = set(re.findall(r"[a-z]+", text.casefold().replace("-", " ")))
-    return {word[:-1] if len(word) > 3 and word.endswith("s") else word for word in words}
+    return {
+        word[:-1] if len(word) > 3 and word.endswith("s") else word for word in words
+    }
 
 
 def _named_objective_locations(state: WorldState, objective: str) -> set[str]:
@@ -520,7 +630,9 @@ def _is_grounded_referential_contact(
         return False
 
     context_words = _word_roots(f"{quest.title} {quest.description}")
-    context_words -= _word_roots(" ".join((*_OBJECTIVE_GENERIC_WORDS, *_FINAL_OBJECTIVE_STOP_WORDS)))
+    context_words -= _word_roots(
+        " ".join((*_OBJECTIVE_GENERIC_WORDS, *_FINAL_OBJECTIVE_STOP_WORDS))
+    )
     context_words -= {
         form
         for forms in _FINAL_OBJECTIVE_VERB_FORMS.values()
@@ -591,8 +703,8 @@ def _is_grounded_dialogue_reply(
         return False
 
     prior_history = state.history
-    if len(state.history) >= len(events) and state.history[-len(events):] == events:
-        prior_history = state.history[:-len(events)]
+    if len(state.history) >= len(events) and state.history[-len(events) :] == events:
+        prior_history = state.history[: -len(events)]
     prior_exchange = next(
         (
             (index, event)
@@ -609,7 +721,7 @@ def _is_grounded_dialogue_reply(
     progress_marker = f"quest '{quest.id.casefold()}' progress"
     if any(
         progress_marker in event.text.casefold()
-        for event in prior_history[exchange_index + 1:]
+        for event in prior_history[exchange_index + 1 :]
     ):
         return False
 
@@ -643,29 +755,41 @@ def _can_advance_objective(
         and _DIALOGUE_ATTEMPT_PATTERN.match(tool.description.casefold())
     ):
         return False
-    if (
-        _DIALOGUE_OBJECTIVE_PATTERN.match(objective)
-        and not _dialogue_attempt_mentions_quest_topic(quest, tool)
-    ):
+    if _DIALOGUE_OBJECTIVE_PATTERN.match(
+        objective
+    ) and not _dialogue_attempt_mentions_quest_topic(quest, tool):
         return False
 
     owner_events = [event for event in events if quest.owner in event.characters]
-    if not owner_events or any(_FAILED_ATTEMPT_PATTERN.search(event.text.casefold()) for event in owner_events):
+    if not owner_events or any(
+        _FAILED_ATTEMPT_PATTERN.search(event.text.casefold()) for event in owner_events
+    ):
         return False
 
-    objective_locations = _named_objective_locations(state, quest.plan[quest.current_step])
-    if objective_locations and not any(slugify(event.location) in objective_locations for event in owner_events):
+    objective_locations = _named_objective_locations(
+        state, quest.plan[quest.current_step]
+    )
+    if objective_locations and not any(
+        slugify(event.location) in objective_locations for event in owner_events
+    ):
         return False
 
     actor = state.characters.get(quest.owner)
     attempt_parts = [actor.location if actor else ""]
     if isinstance(tool, (Action, Check)):
-        attempt_parts.extend((tool.description, tool.target if isinstance(tool, Action) and tool.target else ""))
+        attempt_parts.extend(
+            (
+                tool.description,
+                tool.target if isinstance(tool, Action) and tool.target else "",
+            )
+        )
     elif isinstance(tool, Speak):
         attempt_parts.extend((tool.message, tool.target or ""))
     elif isinstance(tool, Attack):
         attempt_parts.append(tool.target)
-    evidence_words = _word_roots(" ".join((*attempt_parts, *(event.text for event in owner_events))))
+    evidence_words = _word_roots(
+        " ".join((*attempt_parts, *(event.text for event in owner_events)))
+    )
 
     objective_words = _word_roots(quest.plan[quest.current_step])
     context_words = _word_roots(f"{quest.title} {quest.description}")
@@ -675,8 +799,17 @@ def _can_advance_objective(
         for forms in _FINAL_OBJECTIVE_VERB_FORMS.values()
         for form in _word_roots(" ".join(forms))
     }
-    verb_words.update(_word_roots("ask check examine identify inspect investigate question search"))
-    anchors = objective_words - context_words - generic_words - verb_words - _FINAL_OBJECTIVE_STOP_WORDS - {"s"}
+    verb_words.update(
+        _word_roots("ask check examine identify inspect investigate question search")
+    )
+    anchors = (
+        objective_words
+        - context_words
+        - generic_words
+        - verb_words
+        - _FINAL_OBJECTIVE_STOP_WORDS
+        - {"s"}
+    )
     required_matches = min(2, len(anchors))
     return (
         not anchors
@@ -698,7 +831,14 @@ def _advance_grounded_objective(
     actor = state.characters.get(actor_id)
     if not actor:
         return []
-    evidence_markers = (" learns:", " finds ", " found ", " discovers ", " reveals ", " picks up ")
+    evidence_markers = (
+        " learns:",
+        " finds ",
+        " found ",
+        " discovers ",
+        " reveals ",
+        " picks up ",
+    )
     has_evidence = any(
         actor_id in event.characters
         and not _FAILED_ATTEMPT_PATTERN.search(event.text.casefold())
@@ -713,12 +853,19 @@ def _advance_grounded_objective(
     for quest in state.quests.values():
         if quest.owner != actor_id or quest.status.lower() in {"completed", "failed"}:
             continue
-        if quest.current_step != steps_before.get(quest.id) or quest.current_step >= len(quest.plan):
+        if quest.current_step != steps_before.get(
+            quest.id
+        ) or quest.current_step >= len(quest.plan):
             continue
         objective = quest.plan[quest.current_step].replace("-", " ").lower()
-        search_objective = any(verb in objective for verb in ("search", "investigate", "examine", "find clues"))
+        search_objective = any(
+            verb in objective
+            for verb in ("search", "investigate", "examine", "find clues")
+        )
         if search_objective and location_name in objective:
-            if quest.current_step == len(quest.plan) - 1 and not _can_advance_final_objective(quest, tool, events):
+            if quest.current_step == len(
+                quest.plan
+            ) - 1 and not _can_advance_final_objective(quest, tool, events):
                 continue
             results.append(WorldOperations(state).advance_quest(quest.id, advance=True))
     return results
@@ -746,14 +893,18 @@ def _complete_resolved_final_objective(
         if not _can_advance_final_objective(final_objective, tool, events):
             continue
 
-        skipped = quest.plan[quest.current_step:final_step]
-        quest.steps.extend(f"{objective} — bypassed by direct resolution" for objective in skipped)
+        skipped = quest.plan[quest.current_step : final_step]
+        quest.steps.extend(
+            f"{objective} — bypassed by direct resolution" for objective in skipped
+        )
         quest.current_step = final_step
-        results.append(WorldOperations(state).advance_quest(
-            quest.id,
-            advance=True,
-            step="resolved directly",
-        ))
+        results.append(
+            WorldOperations(state).advance_quest(
+                quest.id,
+                advance=True,
+                step="resolved directly",
+            )
+        )
     return results
 
 
@@ -766,23 +917,33 @@ def _record_resolution_if_needed(
     """Keep a resolved turn visible when it produced no state-operation event."""
     if len(state.history) == history_size and resolution.strip():
         actor = state.characters.get(actor_id)
-        state.history.append(HistoryEvent(
-            text=resolution.strip(),
-            location=actor.location if actor else "",
-            characters=[actor_id],
-        ))
+        state.history.append(
+            HistoryEvent(
+                text=resolution.strip(),
+                location=actor.location if actor else "",
+                characters=[actor_id],
+            )
+        )
     return state.history[history_size:]
 
 
 def _campaign_outcome(state: WorldState, pc_id: str) -> str | None:
     """Return a terminal outcome once every quest owned by the PC is resolved."""
     quests = [quest for quest in state.quests.values() if quest.owner == pc_id]
-    if not quests or any(quest.status.lower() not in {"completed", "failed"} for quest in quests):
+    if not quests or any(
+        quest.status.lower() not in {"completed", "failed"} for quest in quests
+    ):
         return None
-    return "failed" if any(quest.status.lower() == "failed" for quest in quests) else "completed"
+    return (
+        "failed"
+        if any(quest.status.lower() == "failed" for quest in quests)
+        else "completed"
+    )
 
 
-def _announce_campaign_outcome(state: WorldState, pc_id: str, logger: Logger, outcome: str) -> None:
+def _announce_campaign_outcome(
+    state: WorldState, pc_id: str, logger: Logger, outcome: str
+) -> None:
     quests = [quest.id for quest in state.quests.values() if quest.owner == pc_id]
     if outcome == "completed":
         print(f"\n=== {pc_id}'s quests are complete. The campaign ends in victory. ===")
@@ -819,6 +980,7 @@ def _record_intervention(state: WorldState, quest_id: str | None) -> str:
 
 # ─── Agent flows ──────────────────────────────────────────────
 
+
 async def flow_agent_turn(
     actor_id: str,
     state: WorldState,
@@ -833,7 +995,12 @@ async def flow_agent_turn(
         return replay.character(actor_id)
     if pc_controller is not None:
         intent = await pc_controller(actor_id, state)
-        logger.log_event("player_action", actor=actor_id, tool=intent.kind, action=intent.model_dump(mode="json"))
+        logger.log_event(
+            "player_action",
+            actor=actor_id,
+            tool=intent.kind,
+            action=intent.model_dump(mode="json"),
+        )
         return replay.character(actor_id, intent) if replay else intent
     label = f"character:{actor_id}"
     try:
@@ -852,7 +1019,10 @@ async def flow_agent_turn(
 
 
 async def flow_dm(
-    state: WorldState, new_events: list[HistoryEvent], logger: Logger, replay: ReplayTape | None = None
+    state: WorldState,
+    new_events: list[HistoryEvent],
+    logger: Logger,
+    replay: ReplayTape | None = None,
 ) -> DMResult:
     """One LLM call: enrich the world, review quests, and estimate time for this tick's new events."""
     if not new_events:
@@ -860,14 +1030,18 @@ async def flow_dm(
     if replay and replay.is_playback:
         return replay.dm()
     new_texts = [e.text for e in new_events]
-    tail = state.history[: -len(new_events)]  # new_events is non-empty here (checked above)
+    tail = state.history[
+        : -len(new_events)
+    ]  # new_events is non-empty here (checked above)
     context_events = [e.text for e in tail[-10:]]
     label = "dm"
     try:
         with logger.run(label):
             result = await dm_agent.run(
                 "Register any new entities, report quest progress, and estimate minutes elapsed for each new event.",
-                deps=DMDeps(state=state, context_events=context_events, new_events=new_texts),
+                deps=DMDeps(
+                    state=state, context_events=context_events, new_events=new_texts
+                ),
                 usage_limits=_DM_USAGE,
             )
             logger.log_messages(label, result.all_messages())
@@ -878,12 +1052,17 @@ async def flow_dm(
     dm_result = result.output
     if not dm_result.minutes or len(dm_result.minutes) != len(new_events):
         dm_result.minutes = [1] * len(new_events)
-    dm_result.creates = sorted(dm_result.creates, key=lambda i: _CREATE_ORDER.get(i.type, 3))
+    dm_result.creates = sorted(
+        dm_result.creates, key=lambda i: _CREATE_ORDER.get(i.type, 3)
+    )
     return replay.dm(dm_result) if replay else dm_result
 
 
 async def flow_director(
-    state: WorldState, location_id: str, logger: Logger, replay: ReplayTape | None = None
+    state: WorldState,
+    location_id: str,
+    logger: Logger,
+    replay: ReplayTape | None = None,
 ) -> None:
     """Stall-breaker: one LLM call that introduces a single complication grounded in existing state."""
     label = "director"
@@ -925,6 +1104,7 @@ async def flow_director(
 
 # ─── Tick composition ────────────────────────────────────────
 
+
 async def tick(
     active_pc_id: str,
     state: WorldState,
@@ -934,7 +1114,9 @@ async def tick(
     replay: ReplayTape | None = None,
 ) -> bool:
     actor_id = _pick_next_actor(state, active_pc_id, tick_index)
-    quest_steps_before = {quest.id: quest.current_step for quest in state.quests.values()}
+    quest_steps_before = {
+        quest.id: quest.current_step for quest in state.quests.values()
+    }
 
     controller = pc_controller if actor_id == active_pc_id else None
     intent = await flow_agent_turn(actor_id, state, logger, controller, replay)
@@ -957,7 +1139,7 @@ async def tick(
 
     # 2. One DM call: time estimates, new entities, and quest progress.
     dm = await flow_dm(state, new_events, logger, replay)
-    event_minutes = [max(0, minutes) for minutes in dm.minutes[:len(new_events)]]
+    event_minutes = [max(0, minutes) for minutes in dm.minutes[: len(new_events)]]
     event_minutes.extend([0] * (len(new_events) - len(event_minutes)))
     if event_minutes:
         event_minutes[0] = max(event_minutes[0], _minimum_action_minutes(intent))
@@ -988,14 +1170,18 @@ async def tick(
                 f"  [world] {create_intent.name}: cannot reveal location without "
                 "a concrete name in the current events."
             )
-            _log_rejected_world_update(logger, create_intent, "unsupported_location_evidence")
+            _log_rejected_world_update(
+                logger, create_intent, "unsupported_location_evidence"
+            )
             continue
         if not _can_anchor_new_npc(create_intent, new_events):
             print(
                 f"  [world] {create_intent.name}: cannot reveal NPC at "
                 f"{create_intent.location!r} without current-event identity and location evidence."
             )
-            _log_rejected_world_update(logger, create_intent, "unsupported_npc_evidence")
+            _log_rejected_world_update(
+                logger, create_intent, "unsupported_npc_evidence"
+            )
             continue
         await resolve(create_intent, state, logger=logger)
     for event in state.history[pre_enrich:]:
@@ -1004,14 +1190,19 @@ async def tick(
     # 2c. Review quests. Step-level progress; may append XP events via advance_quest.
     pre_quest = len(state.history)
     for update in dm.modifies:
-        if update.action == "advance_faction_clock" and not _can_accelerate_faction_clock(
-            state,
-            intent,
-            update.target_id,
-            update.other_id,
-            new_events,
+        if (
+            update.action == "advance_faction_clock"
+            and not _can_accelerate_faction_clock(
+                state,
+                intent,
+                update.target_id,
+                update.other_id,
+                new_events,
+            )
         ):
-            print(f"  [faction] {update.target_id}: this turn cannot accelerate that clock.")
+            print(
+                f"  [faction] {update.target_id}: this turn cannot accelerate that clock."
+            )
             _log_rejected_world_modification(
                 logger,
                 update,
@@ -1023,10 +1214,16 @@ async def tick(
             and (target := resolve_character(state, update.target_id))
             and target.id == active_pc_id
         ):
-            print(f"  [world] {update.target_id}: cannot remove the active player character.")
+            print(
+                f"  [world] {update.target_id}: cannot remove the active player character."
+            )
             continue
         quest_key = next(
-            (candidate for candidate in state.quests if slugify(candidate) == slugify(update.target_id)),
+            (
+                candidate
+                for candidate in state.quests
+                if slugify(candidate) == slugify(update.target_id)
+            ),
             None,
         )
         quest = state.quests.get(quest_key) if quest_key else None
@@ -1035,13 +1232,19 @@ async def tick(
             update.action == "update_quest"
             and (update.advance or is_final_status)
             and quest
-            and not _can_advance_objective(state, quest, intent, new_events, update.step)
+            and not _can_advance_objective(
+                state, quest, intent, new_events, update.step
+            )
         ):
-            print(f"  [quest] {update.target_id}: current objective requires its owner's relevant resolution attempt.")
+            print(
+                f"  [quest] {update.target_id}: current objective requires its owner's relevant resolution attempt."
+            )
             continue
         msg = await resolve(update, state, logger=logger)
         print(f"  [quest] {update.target_id}: {msg}")
-    for msg in _advance_grounded_objective(state, actor_id, intent, new_events, quest_steps_before):
+    for msg in _advance_grounded_objective(
+        state, actor_id, intent, new_events, quest_steps_before
+    ):
         print(f"  [quest] grounded fallback: {msg}")
     for msg in _complete_resolved_final_objective(state, actor_id, intent, new_events):
         print(f"  [quest] final resolution: {msg}")
@@ -1050,7 +1253,9 @@ async def tick(
 
     # 3. Director beat: when the story stalls, one proactive complication breaks it.
     if _is_stalled(state):
-        await flow_director(state, state.characters[active_pc_id].location, logger, replay)
+        await flow_director(
+            state, state.characters[active_pc_id].location, logger, replay
+        )
         state.last_quest_advance_time = state.time  # suppress consecutive fires
     return True
 
@@ -1059,11 +1264,14 @@ async def tick(
 # Entry point
 # ============================================================
 
+
 def _snapshot(state: WorldState) -> dict:
     """World/quest/xp counters for scorecard.py — logged before and after every tick."""
     quests = state.quests.values()
     return {
-        "quests_active": sum(1 for q in quests if q.status.lower() not in {"completed", "failed"}),
+        "quests_active": sum(
+            1 for q in quests if q.status.lower() not in {"completed", "failed"}
+        ),
         "quests_completed": sum(1 for q in quests if q.status.lower() == "completed"),
         "quests_failed": sum(1 for q in quests if q.status.lower() == "failed"),
         "locations": len(state.locations),
@@ -1118,7 +1326,9 @@ async def _run_game(
         session_id=session_id,
         append=resume,
         # Prefill/decode split only exists for the local llama-server.
-        metrics_reader=read_metrics if os.getenv("LLM_PROVIDER", "local") == "local" else None,
+        metrics_reader=read_metrics
+        if os.getenv("LLM_PROVIDER", "local") == "local"
+        else None,
     )
     run_failed = False
     try:
@@ -1140,9 +1350,13 @@ async def _run_game(
             logger.log_turn(state.time + 1)
             pre_minutes = state.minutes_elapsed
             try:
-                turn_completed = await tick(pc_id, state, state.time, logger, pc_controller, replay)
+                turn_completed = await tick(
+                    pc_id, state, state.time, logger, pc_controller, replay
+                )
             except AgentRunError as exc:
-                logger.log_event("run_error", error=type(exc).__name__, message=str(exc))
+                logger.log_event(
+                    "run_error", error=type(exc).__name__, message=str(exc)
+                )
                 print(f"  [error] campaign stopped: {exc}", flush=True)
                 run_failed = True
                 break
@@ -1150,8 +1364,12 @@ async def _run_game(
                 logger.log_event("run_stopped", reason="no_character_action")
                 break
             # Off-screen agendas march with in-world time, not turn count.
-            WorldOperations(state).advance_faction_clocks_hourly(pre_minutes, state.minutes_elapsed)
-            await compact_history(state, logger, replay)  # between ticks only — never mid-tick
+            WorldOperations(state).advance_faction_clocks_hourly(
+                pre_minutes, state.minutes_elapsed
+            )
+            await compact_history(
+                state, logger, replay
+            )  # between ticks only — never mid-tick
             logger.log_event("world_snapshot", **_snapshot(state))
             state.time += 1
             manager.save_state(state)
@@ -1180,6 +1398,7 @@ def run_game(
     scenario: str | None = None,
     new_character: dict | None = None,
     *,
+    resume: bool = False,
     replay: ReplayTape | None = None,
     pc_controller: Callable[[str, WorldState], Awaitable[CharacterTool]] | None = None,
 ) -> bool:
@@ -1192,6 +1411,7 @@ def run_game(
             character_id,
             max_turns,
             new_character,
+            resume=resume,
             replay=replay,
             pc_controller=pc_controller,
         )

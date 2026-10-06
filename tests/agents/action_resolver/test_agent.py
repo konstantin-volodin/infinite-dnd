@@ -4,13 +4,23 @@ from inspect import signature
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai import RunContext
+from pydantic_ai.usage import RunUsage
+from src.agents.utils import create_model
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
 from src.agents.character.tools import Action
 from src.engine.state import WorldOperations
-from src.engine.state.models import Character, Faction, Location, ProgressClock, Quest, WorldState
+from src.engine.state.models import (
+    Character,
+    Faction,
+    Location,
+    ProgressClock,
+    Quest,
+    WorldState,
+)
 from src.agents.action_resolver.agent import (
     ActionResolverDeps,
     add_detail,
@@ -29,11 +39,17 @@ from src.agents.character.tools import Attack, Check, Speak, Travel, Wait
 from src.agents.dm.tools import Create, Modify
 
 
+def _context(deps: ActionResolverDeps) -> RunContext[ActionResolverDeps]:
+    return RunContext(deps=deps, model=create_model(), usage=RunUsage())
+
+
 def _state() -> WorldState:
     return WorldState(
         locations={"tavern": Location(id="tavern", connections=[])},
         characters={
-            "hero": Character(id="hero", role="warrior", location="tavern", goal="find the ale"),
+            "hero": Character(
+                id="hero", role="warrior", location="tavern", goal="find the ale"
+            ),
             "merchant": Character(id="merchant", role="merchant", location="tavern"),
         },
     )
@@ -57,14 +73,19 @@ def test_travel_does_not_store_paraphrase_of_recent_knowledge():
     )
     hero.knowledge = [original]
 
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="market-square",
-        remember=(
-            "Kaelen was dragged along valley-bridge—guard cloak fibers caught on the lantern "
-            "post confirm violence, not voluntary movement."
-        ),
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="market-square",
+                remember=(
+                    "Kaelen was dragged along valley-bridge—guard cloak fibers caught on the lantern "
+                    "post confirm violence, not voluntary movement."
+                ),
+            ),
+            state,
+        )
+    )
 
     assert hero.knowledge == [original]
     assert [event.text for event in state.history] == ["hero moved to 'market-square'."]
@@ -80,11 +101,16 @@ def test_travel_keeps_related_but_distinct_new_knowledge():
     ]
     new_fact = "Alan paid for an unconscious passenger to be transported downriver."
 
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="market-square",
-        remember=new_fact,
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="market-square",
+                remember=new_fact,
+            ),
+            state,
+        )
+    )
 
     assert hero.knowledge[-1] == new_fact
 
@@ -118,10 +144,15 @@ def test_agent_cannot_narrow_active_quest_into_repetitive_search_goal():
         owner="hero",
     )
 
-    asyncio.run(resolve(Wait(
-        actor="hero",
-        new_goal="Find clues about the missing ale in the cellar",
-    ), state))
+    asyncio.run(
+        resolve(
+            Wait(
+                actor="hero",
+                new_goal="Find clues about the missing ale in the cellar",
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].goal == "find the ale"
     assert [event.text for event in state.history] == ["hero waits."]
@@ -129,9 +160,9 @@ def test_agent_cannot_narrow_active_quest_into_repetitive_search_goal():
 
 def test_supporting_npc_cannot_replace_goal_with_active_quest_step():
     state = _state()
-    state.characters["merchant"].goal = (
-        "Help young Hero recover the Oak Circlet while keeping old house secrets."
-    )
+    state.characters[
+        "merchant"
+    ].goal = "Help young Hero recover the Oak Circlet while keeping old house secrets."
     state.quests["circlet"] = Quest(
         id="circlet",
         title="The Oak Circlet",
@@ -140,12 +171,17 @@ def test_supporting_npc_cannot_replace_goal_with_active_quest_step():
         plan=["search the upper-library reading table for the Circlet"],
     )
 
-    asyncio.run(resolve(Speak(
-        actor="merchant",
-        target="hero",
-        message="We should search the reading table before the trail grows cold.",
-        new_goal="Search the upper-library reading table for the Circlet",
-    ), state))
+    asyncio.run(
+        resolve(
+            Speak(
+                actor="merchant",
+                target="hero",
+                message="We should search the reading table before the trail grows cold.",
+                new_goal="Search the upper-library reading table for the Circlet",
+            ),
+            state,
+        )
+    )
 
     assert state.characters["merchant"].goal == (
         "Help young Hero recover the Oak Circlet while keeping old house secrets."
@@ -165,19 +201,32 @@ def test_supporting_npc_can_make_major_goal_change_about_active_quest():
         plan=["search the upper-library reading table for the Circlet"],
     )
 
-    asyncio.run(resolve(Speak(
-        actor="merchant",
-        target="hero",
-        message="The Circlet belongs to me now.",
-        new_goal="Betray Hero and steal the Oak Circlet for myself",
-    ), state))
+    asyncio.run(
+        resolve(
+            Speak(
+                actor="merchant",
+                target="hero",
+                message="The Circlet belongs to me now.",
+                new_goal="Betray Hero and steal the Oak Circlet for myself",
+            ),
+            state,
+        )
+    )
 
-    assert state.characters["merchant"].goal == "Betray Hero and steal the Oak Circlet for myself"
+    assert (
+        state.characters["merchant"].goal
+        == "Betray Hero and steal the Oak Circlet for myself"
+    )
 
 
 def test_remember_and_new_goal_together_on_any_tool():
     state = _state()
-    tool = Speak(actor="hero", message="I've had enough of this place.", remember="the barkeep flinched at the question", new_goal="leave town")
+    tool = Speak(
+        actor="hero",
+        message="I've had enough of this place.",
+        remember="the barkeep flinched at the question",
+        new_goal="leave town",
+    )
     asyncio.run(resolve(tool, state))
     hero = state.characters["hero"]
     assert "the barkeep flinched at the question" in hero.knowledge
@@ -187,15 +236,20 @@ def test_remember_and_new_goal_together_on_any_tool():
 def test_current_action_note_is_not_stored_as_durable_knowledge():
     state = _state()
 
-    asyncio.run(resolve(Speak(
-        actor="hero",
-        target="merchant",
-        message="Did you see the missing guard near the market?",
-        remember=(
-            "Asking Merchant about the guard's last movements near the market—"
-            "searching for witnesses to the disappearance."
-        ),
-    ), state))
+    asyncio.run(
+        resolve(
+            Speak(
+                actor="hero",
+                target="merchant",
+                message="Did you see the missing guard near the market?",
+                remember=(
+                    "Asking Merchant about the guard's last movements near the market—"
+                    "searching for witnesses to the disappearance."
+                ),
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert [event.text for event in state.history] == [
@@ -206,15 +260,20 @@ def test_current_action_note_is_not_stored_as_durable_knowledge():
 def test_subject_elided_completed_action_note_is_not_stored_as_durable_knowledge():
     state = _state()
 
-    asyncio.run(resolve(Speak(
-        actor="hero",
-        target="merchant",
-        message="I found your name in a smugglers' ledger. What are you buying?",
-        remember=(
-            "Confronted Merchant directly with the ledger evidence to gauge his "
-            "response and involvement."
-        ),
-    ), state))
+    asyncio.run(
+        resolve(
+            Speak(
+                actor="hero",
+                target="merchant",
+                message="I found your name in a smugglers' ledger. What are you buying?",
+                remember=(
+                    "Confronted Merchant directly with the ledger evidence to gauge his "
+                    "response and involvement."
+                ),
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert [event.text for event in state.history] == [
@@ -236,14 +295,19 @@ def test_embedded_confrontation_note_is_not_stored_as_durable_knowledge():
     state.locations["market-square"] = Location(id="market-square")
     state.locations["tavern"].connections = ["market-square"]
 
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="market-square",
-        remember=(
-            "Alan conducted an unscheduled transaction the day Kaelen vanished—"
-            "confronting him directly about what happened."
-        ),
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="market-square",
+                remember=(
+                    "Alan conducted an unscheduled transaction the day Kaelen vanished—"
+                    "confronting him directly about what happened."
+                ),
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert [event.text for event in state.history] == ["hero moved to 'market-square'."]
@@ -252,15 +316,20 @@ def test_embedded_confrontation_note_is_not_stored_as_durable_knowledge():
 def test_embedded_current_action_note_is_not_stored_as_durable_knowledge():
     state = _state()
 
-    asyncio.run(resolve(Speak(
-        actor="hero",
-        target="merchant",
-        message="Did you see Kaelen after his patrol near the river?",
-        remember=(
-            "Ronny-spice is a merchant in market-square; asking about Kaelen's "
-            "disappearance and the torn fabric found at valley-bridge railing."
-        ),
-    ), state))
+    asyncio.run(
+        resolve(
+            Speak(
+                actor="hero",
+                target="merchant",
+                message="Did you see Kaelen after his patrol near the river?",
+                remember=(
+                    "Ronny-spice is a merchant in market-square; asking about Kaelen's "
+                    "disappearance and the torn fabric found at valley-bridge railing."
+                ),
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert [event.text for event in state.history] == [
@@ -376,9 +445,7 @@ def test_known_character_pending_action_is_not_stored_as_durable_knowledge():
         role="former guard",
         location="tavern",
     )
-    pending_action = (
-        "Elara is heading to find Alan at the trade-dock to ask about Kaelen's disappearance"
-    )
+    pending_action = "Elara is heading to find Alan at the trade-dock to ask about Kaelen's disappearance"
 
     asyncio.run(resolve(Wait(actor="hero", remember=pending_action), state))
 
@@ -414,11 +481,16 @@ def test_goal_note_is_not_stored_as_durable_knowledge():
     state.locations["forest"] = Location(id="forest")
     state.locations["tavern"].connections = ["forest"]
 
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="forest",
-        remember="Goal: search the forest for clues about the missing guard.",
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="forest",
+                remember="Goal: search the forest for clues about the missing guard.",
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert [event.text for event in state.history] == ["hero moved to 'forest'."]
@@ -436,11 +508,16 @@ def test_current_objective_note_is_not_stored_as_durable_knowledge(memory):
     state.locations["upper-library"] = Location(id="upper-library")
     state.locations["tavern"].connections = ["upper-library"]
 
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="upper-library",
-        remember=memory,
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="upper-library",
+                remember=memory,
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert [event.text for event in state.history] == ["hero moved to 'upper-library'."]
@@ -451,11 +528,16 @@ def test_past_fact_is_still_stored_when_the_character_takes_a_new_action():
     state.locations["forest"] = Location(id="forest")
     state.locations["tavern"].connections = ["forest"]
 
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="forest",
-        remember="Searching the riverbank revealed torn cloth from the missing guard.",
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="forest",
+                remember="Searching the riverbank revealed torn cloth from the missing guard.",
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == [
         "Searching the riverbank revealed torn cloth from the missing guard.",
@@ -517,15 +599,22 @@ def test_free_form_action_records_its_outcome_before_optional_self_updates(monke
     state = _state()
 
     async def resolved_action(*_args, **_kwargs):
-        return SimpleNamespace(output="A misaligned portrait reveals a hidden compartment.")
+        return SimpleNamespace(
+            output="A misaligned portrait reveals a hidden compartment."
+        )
 
     monkeypatch.setattr("src.agents.action_resolver.agent.agent.run", resolved_action)
 
-    result = asyncio.run(resolve(Action(
-        actor="hero",
-        description="inspect the portraits",
-        new_goal="open the hidden compartment",
-    ), state))
+    result = asyncio.run(
+        resolve(
+            Action(
+                actor="hero",
+                description="inspect the portraits",
+                new_goal="open the hidden compartment",
+            ),
+            state,
+        )
+    )
 
     assert result == "A misaligned portrait reveals a hidden compartment."
     assert [event.text for event in state.history] == [
@@ -534,11 +623,13 @@ def test_free_form_action_records_its_outcome_before_optional_self_updates(monke
     ]
 
 
-def test_free_form_action_reports_actual_mutations_instead_of_contradictory_prose(monkeypatch):
+def test_free_form_action_reports_actual_mutations_instead_of_contradictory_prose(
+    monkeypatch,
+):
     state = _state()
 
     async def resolved_action(*_args, **kwargs):
-        ctx = SimpleNamespace(deps=kwargs["deps"])
+        ctx = _context(kwargs["deps"])
         discover_exit(
             ctx,
             name="wine cellar",
@@ -548,10 +639,15 @@ def test_free_form_action_reports_actual_mutations_instead_of_contradictory_pros
 
     monkeypatch.setattr("src.agents.action_resolver.agent.agent.run", resolved_action)
 
-    result = asyncio.run(resolve(Action(
-        actor="hero",
-        description="head down to the wine cellar and search it",
-    ), state))
+    result = asyncio.run(
+        resolve(
+            Action(
+                actor="hero",
+                description="head down to the wine cellar and search it",
+            ),
+            state,
+        )
+    )
 
     assert result == "Location 'wine-cellar' added."
     assert state.characters["hero"].location == "tavern"
@@ -567,21 +663,35 @@ def test_free_form_action_applies_dependent_tool_calls_in_model_order(monkeypatc
         nonlocal calls
         calls += 1
         if calls == 1:
-            return ModelResponse(parts=[
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "discover_exit",
+                        {
+                            "name": "river overlook",
+                            "description": "A bluff over the river.",
+                        },
+                        tool_call_id="discover",
+                    ),
+                    ToolCallPart(
+                        "add_detail",
+                        {
+                            "location": "river-overlook",
+                            "detail": "Drag marks end at the edge.",
+                        },
+                        tool_call_id="detail",
+                    ),
+                ]
+            )
+        return ModelResponse(
+            parts=[
                 ToolCallPart(
-                    "discover_exit",
-                    {"name": "river overlook", "description": "A bluff over the river."},
-                    tool_call_id="discover",
+                    "done",
+                    {"response": "The tracks end at the river."},
+                    tool_call_id="done",
                 ),
-                ToolCallPart(
-                    "add_detail",
-                    {"location": "river-overlook", "detail": "Drag marks end at the edge."},
-                    tool_call_id="detail",
-                ),
-            ])
-        return ModelResponse(parts=[
-            ToolCallPart("done", {"response": "The tracks end at the river."}, tool_call_id="done"),
-        ])
+            ]
+        )
 
     original_add_location = WorldOperations.add_location
 
@@ -594,12 +704,19 @@ def test_free_form_action_applies_dependent_tool_calls_in_model_order(monkeypatc
     monkeypatch.setattr(WorldOperations, "add_location", slow_add_location)
 
     with agent.override(model=FunctionModel(model)):
-        result = asyncio.run(resolve(Action(
-            actor="hero",
-            description="follow the tracks to the river and inspect where they end",
-        ), state))
+        result = asyncio.run(
+            resolve(
+                Action(
+                    actor="hero",
+                    description="follow the tracks to the river and inspect where they end",
+                ),
+                state,
+            )
+        )
 
-    assert result == "Location 'river-overlook' added. Location 'river-overlook' updated."
+    assert (
+        result == "Location 'river-overlook' added. Location 'river-overlook' updated."
+    )
     assert state.locations["river-overlook"].features == ["Drag marks end at the edge."]
     assert [event.text for event in state.history] == [result]
 
@@ -608,29 +725,38 @@ def test_free_form_action_applies_mutations_sent_with_terminal_output():
     state = _state()
 
     def model(_messages, _info):
-        return ModelResponse(parts=[
-            ToolCallPart(
-                "remember",
-                {"knowledge": "Old Keph conducts business at lighthouse-base."},
-                tool_call_id="remember",
-            ),
-            ToolCallPart(
-                "add_detail",
-                {"detail": "The notice post lists Old Keph at lighthouse-base."},
-                tool_call_id="detail",
-            ),
-            ToolCallPart(
-                "done",
-                {"response": "The notice post confirms where Old Keph can be found."},
-                tool_call_id="done",
-            ),
-        ])
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "remember",
+                    {"knowledge": "Old Keph conducts business at lighthouse-base."},
+                    tool_call_id="remember",
+                ),
+                ToolCallPart(
+                    "add_detail",
+                    {"detail": "The notice post lists Old Keph at lighthouse-base."},
+                    tool_call_id="detail",
+                ),
+                ToolCallPart(
+                    "done",
+                    {
+                        "response": "The notice post confirms where Old Keph can be found."
+                    },
+                    tool_call_id="done",
+                ),
+            ]
+        )
 
     with agent.override(model=FunctionModel(model)):
-        result = asyncio.run(resolve(Action(
-            actor="hero",
-            description="search the notice post for Old Keph's whereabouts",
-        ), state))
+        result = asyncio.run(
+            resolve(
+                Action(
+                    actor="hero",
+                    description="search the notice post for Old Keph's whereabouts",
+                ),
+                state,
+            )
+        )
 
     assert state.characters["hero"].knowledge == [
         "Old Keph conducts business at lighthouse-base.",
@@ -653,13 +779,18 @@ def test_free_form_action_cannot_interact_with_known_remote_location():
     state.locations["tavern"].connections.append("upper-library")
     before = state.model_dump()
 
-    result = asyncio.run(resolve(Action(
-        actor="hero",
-        description=(
-            "Search the upper-library for clues and examine the reading table "
-            "where the circlet was last seen."
-        ),
-    ), state))
+    result = asyncio.run(
+        resolve(
+            Action(
+                actor="hero",
+                description=(
+                    "Search the upper-library for clues and examine the reading table "
+                    "where the circlet was last seen."
+                ),
+            ),
+            state,
+        )
+    )
 
     assert result == (
         "Cannot resolve action at 'upper-library' — 'hero' is at 'tavern'. "
@@ -696,11 +827,16 @@ def test_free_form_action_keeps_resolver_memory_over_pre_resolution_memory(monke
 
     monkeypatch.setattr("src.agents.action_resolver.agent.agent.run", resolved_action)
 
-    asyncio.run(resolve(Action(
-        actor="hero",
-        description="ask where the innkeeper went",
-        remember="The innkeeper is waiting in the tavern.",
-    ), state))
+    asyncio.run(
+        resolve(
+            Action(
+                actor="hero",
+                description="ask where the innkeeper went",
+                remember="The innkeeper is waiting in the tavern.",
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == [
         "The innkeeper left for the docks an hour ago.",
@@ -715,11 +851,16 @@ def test_free_form_action_uses_character_memory_when_resolver_records_none(monke
 
     monkeypatch.setattr("src.agents.action_resolver.agent.agent.run", resolved_action)
 
-    asyncio.run(resolve(Action(
-        actor="hero",
-        description="inspect the loose brick",
-        remember="The loose brick bears the thieves' mark.",
-    ), state))
+    asyncio.run(
+        resolve(
+            Action(
+                actor="hero",
+                description="inspect the loose brick",
+                remember="The loose brick bears the thieves' mark.",
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == [
         "The loose brick bears the thieves' mark.",
@@ -728,18 +869,22 @@ def test_free_form_action_uses_character_memory_when_resolver_records_none(monke
 
 def test_action_resolver_keeps_only_one_decisive_knowledge_fact_per_action():
     state = _state()
-    ctx = SimpleNamespace(deps=ActionResolverDeps(
-        char=state.characters["hero"],
-        state=state,
-        description="read the genealogy",
-    ))
+    ctx = _context(
+        ActionResolverDeps(
+            char=state.characters["hero"],
+            state=state,
+            description="read the genealogy",
+        )
+    )
 
     first = remember(ctx, "The circlet is hidden behind the chapel altar.")
     second = remember(ctx, "The altar has a secret compartment containing the circlet.")
 
     assert "learns" in first
     assert "Call done now" in second
-    assert state.characters["hero"].knowledge == ["The circlet is hidden behind the chapel altar."]
+    assert state.characters["hero"].knowledge == [
+        "The circlet is hidden behind the chapel altar."
+    ]
 
 
 def test_action_resolver_does_not_count_blank_knowledge_as_an_effect():
@@ -749,7 +894,7 @@ def test_action_resolver_does_not_count_blank_knowledge_as_an_effect():
         state=state,
         description="inspect the empty desk",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
     history_before = list(state.history)
 
     result = remember(ctx, "  \t\n  ")
@@ -771,7 +916,7 @@ def test_action_resolver_rejects_transient_self_action_memory_then_accepts_disco
             "while keeping them in conversation."
         ),
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     transient = remember(
         ctx,
@@ -780,7 +925,9 @@ def test_action_resolver_rejects_transient_self_action_memory_then_accepts_disco
             "prevent their escape while questioning them."
         ),
     )
-    corrected = remember(ctx, "The merchant admitted the stolen circlet is hidden at the mill.")
+    corrected = remember(
+        ctx, "The merchant admitted the stolen circlet is hidden at the mill."
+    )
 
     assert transient == (
         "Cannot remember a transient action as durable knowledge. Record only a concrete "
@@ -800,7 +947,7 @@ def test_action_resolver_rejects_subject_elided_completed_action_memory():
         state=state,
         description="confront the merchant with the seized ledger",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -828,7 +975,7 @@ def test_action_resolver_rejects_known_character_follow_up_plan():
         state=state,
         description="review the seized records and decide who should receive them",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -859,7 +1006,7 @@ def test_action_resolver_rejects_known_character_pending_action():
         state=state,
         description="listen while Elara explains whom she plans to question next",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -882,7 +1029,7 @@ def test_action_resolver_rejects_subject_elided_follow_up_plan():
         state=state,
         description="review which servants may know where the circlet went",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -909,7 +1056,7 @@ def test_action_resolver_rejects_deictic_worth_follow_up_plan():
         state=state,
         description="follow Finnian's lead about Calla and the vault",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -935,7 +1082,7 @@ def test_action_resolver_rejects_deictic_next_lead_follow_up_plan():
         state=state,
         description="review Kaelen's planned meeting with Dockmaster Alan",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -974,7 +1121,7 @@ def test_action_resolver_rejects_possessive_priority_plan(knowledge):
         state=state,
         description="review the merchant mark's connection to the black-hulled sloop",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(ctx, knowledge)
 
@@ -994,7 +1141,7 @@ def test_action_resolver_rejects_embedded_check_back_instruction():
         state=state,
         description="review Ronny's lead after searching the guild ledger",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
     knowledge = (
         "Ronny Spice is asking the docks crew about Kaelen—check back with her "
         "after visiting the guild-hall ledger."
@@ -1018,7 +1165,7 @@ def test_action_resolver_rejects_possessive_current_objective_note():
         state=state,
         description="search the upper-library for clues about the Oak Circlet",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -1037,10 +1184,15 @@ def test_action_resolver_rejects_possessive_current_objective_note():
 def test_character_tool_does_not_store_transient_self_action_note():
     state = _state()
 
-    asyncio.run(resolve(Wait(
-        actor="hero",
-        remember="Hero stood watch beside the tavern exit while waiting for the merchant.",
-    ), state))
+    asyncio.run(
+        resolve(
+            Wait(
+                actor="hero",
+                remember="Hero stood watch beside the tavern exit while waiting for the merchant.",
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert [event.text for event in state.history] == ["hero waits."]
@@ -1053,9 +1205,11 @@ def test_action_resolver_keeps_self_attributed_discovery_memory():
         state=state,
         description="search the merchant's desk for evidence",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
-    result = remember(ctx, "Hero found the smuggler's manifest beneath the merchant's desk.")
+    result = remember(
+        ctx, "Hero found the smuggler's manifest beneath the merchant's desk."
+    )
 
     assert "learns" in result
     assert state.characters["hero"].knowledge == [
@@ -1092,7 +1246,7 @@ def test_action_resolver_allows_corrected_memory_after_failed_attempt(
         state=state,
         description="question the chapel sexton",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     first = remember(ctx, first_fact, character_id=character_id)
     corrected = remember(
@@ -1111,10 +1265,12 @@ def test_action_resolver_allows_corrected_memory_after_failed_attempt(
 
 def test_action_resolver_rejects_whereabouts_that_conflict_with_canonical_state():
     state = _state()
-    state.locations.update({
-        "lighthouse-base": Location(id="lighthouse-base"),
-        "village-square": Location(id="village-square"),
-    })
+    state.locations.update(
+        {
+            "lighthouse-base": Location(id="lighthouse-base"),
+            "village-square": Location(id="village-square"),
+        }
+    )
     state.characters["old-keph"] = Character(
         id="old-keph",
         role="village elder",
@@ -1125,7 +1281,7 @@ def test_action_resolver_rejects_whereabouts_that_conflict_with_canonical_state(
         state=state,
         description="ask where Old Keph is right now",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(
         ctx,
@@ -1155,7 +1311,7 @@ def test_action_resolver_accepts_whereabouts_after_canonical_location_update():
         state=state,
         description="find Old Keph in the village square",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     move_result = create_npc(ctx, "Old Keph", location="village-square")
     remember_result = remember(ctx, "Old Keph is at village-square.")
@@ -1168,10 +1324,12 @@ def test_action_resolver_accepts_whereabouts_after_canonical_location_update():
 
 def test_character_tool_does_not_upgrade_workplace_to_current_whereabouts():
     state = _state()
-    state.locations.update({
-        "guild-hall": Location(id="guild-hall"),
-        "trade-dock": Location(id="trade-dock"),
-    })
+    state.locations.update(
+        {
+            "guild-hall": Location(id="guild-hall"),
+            "trade-dock": Location(id="trade-dock"),
+        }
+    )
     state.locations["tavern"].connections = ["guild-hall"]
     WorldOperations(state).speak(
         "merchant",
@@ -1179,14 +1337,19 @@ def test_character_tool_does_not_upgrade_workplace_to_current_whereabouts():
         "hero",
     )
 
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="guild-hall",
-        remember=(
-            "Alan the dockmaster is at the trade-dock; the merchant warned me he knows "
-            "more than he lets on."
-        ),
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="guild-hall",
+                remember=(
+                    "Alan the dockmaster is at the trade-dock; the merchant warned me he knows "
+                    "more than he lets on."
+                ),
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert [event.text for event in state.history] == [
@@ -1197,10 +1360,12 @@ def test_character_tool_does_not_upgrade_workplace_to_current_whereabouts():
 
 def test_character_tool_keeps_directly_reported_current_whereabouts():
     state = _state()
-    state.locations.update({
-        "guild-hall": Location(id="guild-hall"),
-        "trade-dock": Location(id="trade-dock"),
-    })
+    state.locations.update(
+        {
+            "guild-hall": Location(id="guild-hall"),
+            "trade-dock": Location(id="trade-dock"),
+        }
+    )
     state.locations["tavern"].connections = ["guild-hall"]
     WorldOperations(state).speak(
         "merchant",
@@ -1209,21 +1374,28 @@ def test_character_tool_keeps_directly_reported_current_whereabouts():
     )
 
     fact = "Alan the dockmaster is at the trade-dock waiting for the harbor bell."
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="guild-hall",
-        remember=fact,
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="guild-hall",
+                remember=fact,
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == [fact]
 
 
 def test_character_tool_rejects_whereabouts_that_conflict_with_canonical_state():
     state = _state()
-    state.locations.update({
-        "guild-hall": Location(id="guild-hall"),
-        "trade-dock": Location(id="trade-dock"),
-    })
+    state.locations.update(
+        {
+            "guild-hall": Location(id="guild-hall"),
+            "trade-dock": Location(id="trade-dock"),
+        }
+    )
     state.locations["tavern"].connections = ["guild-hall"]
     state.characters["dockmaster-alan"] = Character(
         id="dockmaster-alan",
@@ -1231,11 +1403,16 @@ def test_character_tool_rejects_whereabouts_that_conflict_with_canonical_state()
         location="trade-dock",
     )
 
-    asyncio.run(resolve(Travel(
-        actor="hero",
-        destination="guild-hall",
-        remember="Dockmaster Alan is at guild-hall.",
-    ), state))
+    asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="guild-hall",
+                remember="Dockmaster Alan is at guild-hall.",
+            ),
+            state,
+        )
+    )
 
     assert state.characters["hero"].knowledge == []
     assert state.characters["dockmaster-alan"].location == "trade-dock"
@@ -1254,7 +1431,7 @@ def test_action_resolver_allows_known_npc_to_report_about_another_location():
         state=state,
         description="ask Old Keph what he knows",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = remember(ctx, "Old Keph says the smugglers meet at village-square.")
 
@@ -1271,7 +1448,7 @@ def test_action_resolver_does_not_record_zero_effect_hp_adjustment():
         state=state,
         description="tend wounds that are already healed",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, 3)
 
@@ -1291,11 +1468,14 @@ def test_action_resolver_rejects_remote_hp_adjustment():
         state=state,
         description="finish the fleeing merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, -1, character_id="merchant")
 
-    assert result == "Cannot adjust HP — 'hero' and 'merchant' are not in the same location."
+    assert (
+        result
+        == "Cannot adjust HP — 'hero' and 'merchant' are not in the same location."
+    )
     assert merchant.stats.hp == 1
     assert deps.effects == []
     assert state.history == []
@@ -1310,7 +1490,7 @@ def test_action_resolver_allows_colocated_hp_adjustment():
         state=state,
         description="bandage the merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, 2, character_id="merchant")
 
@@ -1329,7 +1509,7 @@ def test_action_resolver_cannot_revive_a_dead_character():
         state=state,
         description="bandage the fallen merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, 2, character_id="merchant")
 
@@ -1353,13 +1533,19 @@ def test_action_resolver_rejects_remote_inventory_mutations():
         state=state,
         description="make the distant merchant exchange evidence",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     take_result = take(ctx, "sealed ledger", character_id="merchant")
     drop_result = drop(ctx, "brass key", character_id="merchant")
 
-    assert take_result == "Cannot take item — 'hero' and 'merchant' are not in the same location."
-    assert drop_result == "Cannot drop item — 'hero' and 'merchant' are not in the same location."
+    assert (
+        take_result
+        == "Cannot take item — 'hero' and 'merchant' are not in the same location."
+    )
+    assert (
+        drop_result
+        == "Cannot drop item — 'hero' and 'merchant' are not in the same location."
+    )
     assert merchant.inventory == ["brass key"]
     assert state.locations["harbor-dock"].items == ["sealed ledger"]
     assert deps.effects == []
@@ -1374,7 +1560,7 @@ def test_action_resolver_allows_colocated_character_to_take_item():
         state=state,
         description="hand the ledger to the merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = take(ctx, "sealed ledger", character_id="merchant")
 
@@ -1394,7 +1580,7 @@ def test_action_resolver_cannot_recreate_item_held_by_another_character():
         state=state,
         description="pick up the sealed letter from the empty crate",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     first_take = take(ctx, "sealed letter with black wax")
     recreate = create_item(ctx, "sealed letter with black wax")
@@ -1419,7 +1605,7 @@ def test_action_resolver_rejects_item_name_without_letters_or_numbers():
         state=state,
         description="find an unnamed object in the room",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = create_item(ctx, " - ")
 
@@ -1437,7 +1623,7 @@ def test_action_resolver_records_opened_item_state_and_blocks_reopening():
         state=state,
         description="open the sealed wax letter and read it",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     opened = change_item(ctx, "sealed wax letter", "opened wax letter")
     repeated = change_item(ctx, "sealed wax letter", "opened wax letter")
@@ -1458,7 +1644,7 @@ def test_add_detail_reports_unchanged_for_an_existing_location_feature():
         state=state,
         description="inspect the chalk sigil behind the bar",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = add_detail(ctx, "a chalk sigil behind the bar")
 
@@ -1476,7 +1662,7 @@ def test_action_resolver_lethal_damage_records_defeat_and_awards_xp():
         state=state,
         description="finish the wounded merchant",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, -1, character_id="merchant")
 
@@ -1505,7 +1691,7 @@ def test_action_resolver_self_inflicted_lethal_damage_does_not_award_xp():
         state=state,
         description="drink the poisoned chalice",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = adjust_hp(ctx, -1)
 
@@ -1532,7 +1718,7 @@ def test_action_resolver_reveals_known_npc_without_duplicating_identity():
         state=state,
         description="steady Alan after he emerges from the forest",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = create_npc(
         ctx,
@@ -1557,7 +1743,7 @@ def test_action_resolver_preserves_deferred_npc_relationship_identity():
         state=state,
         description="search the docks for Alan",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     result = create_npc(
         ctx,
@@ -1582,7 +1768,7 @@ def test_action_resolver_cannot_invent_a_revealed_npc_goal():
         state=state,
         description="search the docks for Alan after his suspicious withdrawal",
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = _context(deps)
 
     assert "goal" not in signature(create_npc).parameters
 
@@ -1601,7 +1787,9 @@ def test_action_resolver_cannot_invent_a_revealed_npc_goal():
     )
 
 
-def test_free_form_action_usage_limit_becomes_visible_outcome_instead_of_crash(monkeypatch):
+def test_free_form_action_usage_limit_becomes_visible_outcome_instead_of_crash(
+    monkeypatch,
+):
     state = _state()
 
     async def exhausted(*_args, **_kwargs):
@@ -1609,7 +1797,9 @@ def test_free_form_action_usage_limit_becomes_visible_outcome_instead_of_crash(m
 
     monkeypatch.setattr("src.agents.action_resolver.agent.agent.run", exhausted)
 
-    result = asyncio.run(resolve(Action(actor="hero", description="search forever"), state))
+    result = asyncio.run(
+        resolve(Action(actor="hero", description="search forever"), state)
+    )
 
     assert result == "hero makes no further progress on that action."
     assert state.history[-1].text == result
@@ -1617,15 +1807,27 @@ def test_free_form_action_usage_limit_becomes_visible_outcome_instead_of_crash(m
 
 def test_modify_update_relationship_applied():
     state = _state()
-    tool = Modify(action="update_relationship", target_id="hero", other_id="merchant", reason="grateful — she healed me")
+    tool = Modify(
+        action="update_relationship",
+        target_id="hero",
+        other_id="merchant",
+        reason="grateful — she healed me",
+    )
     result = asyncio.run(resolve(tool, state))
-    assert state.characters["hero"].relationships["merchant"] == "grateful — she healed me"
+    assert (
+        state.characters["hero"].relationships["merchant"] == "grateful — she healed me"
+    )
     assert "grateful" in result
 
 
 def test_modify_update_relationship_unknown_target():
     state = _state()
-    tool = Modify(action="update_relationship", target_id="ghost", other_id="merchant", reason="hostile")
+    tool = Modify(
+        action="update_relationship",
+        target_id="ghost",
+        other_id="merchant",
+        reason="hostile",
+    )
     result = asyncio.run(resolve(tool, state))
     assert "Cannot update relationship" in result
     assert "ghost" not in state.characters
@@ -1633,7 +1835,9 @@ def test_modify_update_relationship_unknown_target():
 
 def test_modify_update_relationship_missing_fields():
     state = _state()
-    tool = Modify(action="update_relationship", target_id="hero", other_id=None, reason=None)
+    tool = Modify(
+        action="update_relationship", target_id="hero", other_id=None, reason=None
+    )
     result = asyncio.run(resolve(tool, state))
     assert "Cannot update relationship" in result
     assert state.characters["hero"].relationships == {}
@@ -1647,10 +1851,12 @@ def test_modify_update_quest_normalizes_id():
         owner="hero",
     )
 
-    result = asyncio.run(resolve(
-        Modify(action="update_quest", target_id="MISSING BROTHER", advance=True),
-        state,
-    ))
+    result = asyncio.run(
+        resolve(
+            Modify(action="update_quest", target_id="MISSING BROTHER", advance=True),
+            state,
+        )
+    )
 
     assert "updated" in result
     assert state.quests["missing-brother"].current_step == 1
@@ -1660,14 +1866,26 @@ def test_modify_update_quest_normalizes_id():
 def test_modify_normalizes_character_and_location_targets():
     state = _state()
 
-    location_result = asyncio.run(resolve(
-        Modify(action="update_location", target_id="TAVERN", reason="The shutters are barred."),
-        state,
-    ))
-    npc_result = asyncio.run(resolve(
-        Modify(action="remove_npc", target_id="MERCHANT", reason="Leaves for the market."),
-        state,
-    ))
+    location_result = asyncio.run(
+        resolve(
+            Modify(
+                action="update_location",
+                target_id="TAVERN",
+                reason="The shutters are barred.",
+            ),
+            state,
+        )
+    )
+    npc_result = asyncio.run(
+        resolve(
+            Modify(
+                action="remove_npc",
+                target_id="MERCHANT",
+                reason="Leaves for the market.",
+            ),
+            state,
+        )
+    )
 
     assert "updated" in location_result
     assert state.locations["tavern"].description == "The shutters are barred."
@@ -1681,7 +1899,14 @@ def test_modify_advance_faction_clock_applied():
         id="crew",
         name="The Crew",
         goal="move the goods",
-        clocks=[ProgressClock(id="haul", name="Haul the goods", segments=2, consequence="The goods are gone.")],
+        clocks=[
+            ProgressClock(
+                id="haul",
+                name="Haul the goods",
+                segments=2,
+                consequence="The goods are gone.",
+            )
+        ],
     )
     tool = Modify(action="advance_faction_clock", target_id="crew", other_id="haul")
     result = asyncio.run(resolve(tool, state))
@@ -1707,10 +1932,12 @@ def test_modify_does_not_report_completed_faction_clock_as_advanced():
         ],
     )
 
-    result = asyncio.run(resolve(
-        Modify(action="advance_faction_clock", target_id="crew", other_id="haul"),
-        state,
-    ))
+    result = asyncio.run(
+        resolve(
+            Modify(action="advance_faction_clock", target_id="crew", other_id="haul"),
+            state,
+        )
+    )
 
     assert result == "Clock 'haul' no longer advances — it is already completed."
     assert state.factions["crew"].clocks[0].progress == 2
@@ -1723,9 +1950,20 @@ def test_modify_advance_faction_clock_normalizes_ids():
         id="black-hull-crew",
         name="The Black Hull Crew",
         goal="move the goods",
-        clocks=[ProgressClock(id="secret-haul", name="Haul the goods", segments=2, consequence="The goods are gone.")],
+        clocks=[
+            ProgressClock(
+                id="secret-haul",
+                name="Haul the goods",
+                segments=2,
+                consequence="The goods are gone.",
+            )
+        ],
     )
-    tool = Modify(action="advance_faction_clock", target_id="BLACK_HULL_CREW", other_id="SECRET HAUL")
+    tool = Modify(
+        action="advance_faction_clock",
+        target_id="BLACK_HULL_CREW",
+        other_id="SECRET HAUL",
+    )
 
     result = asyncio.run(resolve(tool, state))
 
@@ -1736,9 +1974,15 @@ def test_modify_advance_faction_clock_normalizes_ids():
 def test_create_normalizes_known_location_ids():
     state = _state()
 
-    asyncio.run(resolve(Create(type="item", name="Brass Key", location="TAVERN"), state))
-    asyncio.run(resolve(Create(type="npc", name="Dock Guard", location="Tavern"), state))
-    asyncio.run(resolve(Create(type="location", name="Back Room", location="TAVERN"), state))
+    asyncio.run(
+        resolve(Create(type="item", name="Brass Key", location="TAVERN"), state)
+    )
+    asyncio.run(
+        resolve(Create(type="npc", name="Dock Guard", location="Tavern"), state)
+    )
+    asyncio.run(
+        resolve(Create(type="location", name="Back Room", location="TAVERN"), state)
+    )
 
     assert "Brass Key" in state.locations["tavern"].items
     assert state.characters["dock-guard"].location == "tavern"
@@ -1763,22 +2007,42 @@ class _Rolls:
 
 def test_check_resolution_records_concise_roll_history():
     state = _state()
-    result = asyncio.run(resolve(
-        Check(actor="hero", ability="dexterity", description="picks the cellar lock", difficulty=14, modifier=2),
-        state,
-        rng=_Rolls(12),
-    ))
-    assert result == "hero succeeds: picks the cellar lock [dexterity; 12+2=14 vs DC 14]."
+    result = asyncio.run(
+        resolve(
+            Check(
+                actor="hero",
+                ability="dexterity",
+                description="picks the cellar lock",
+                difficulty=14,
+                modifier=2,
+            ),
+            state,
+            rng=_Rolls(12),
+        )
+    )
+    assert (
+        result == "hero succeeds: picks the cellar lock [dexterity; 12+2=14 vs DC 14]."
+    )
     assert state.history[-1].text == result
     assert state.history[-1].characters == ["hero"]
 
 
 def test_contested_check_records_both_characters():
     state = _state()
-    result = asyncio.run(resolve(Check(
-        actor="hero", ability="charisma", description="bluffs the merchant",
-        opponent="merchant", modifier=1, opposing_modifier=2,
-    ), state, rng=_Rolls(16, 10)))
+    result = asyncio.run(
+        resolve(
+            Check(
+                actor="hero",
+                ability="charisma",
+                description="bluffs the merchant",
+                opponent="merchant",
+                modifier=1,
+                opposing_modifier=2,
+            ),
+            state,
+            rng=_Rolls(16, 10),
+        )
+    )
     assert "16+1=17 vs merchant 10+2=12" in result
     assert state.history[-1].characters == ["hero", "merchant"]
 
@@ -1786,12 +2050,25 @@ def test_contested_check_records_both_characters():
 def test_contested_check_rejects_self_opponent_alias_without_logging():
     state = _state()
 
-    result = asyncio.run(resolve(Check(
-        actor="hero", ability="charisma", description="argues with himself",
-        opponent="HERO", modifier=1, opposing_modifier=2,
-    ), state, rng=_Rolls(16, 10)))
+    result = asyncio.run(
+        resolve(
+            Check(
+                actor="hero",
+                ability="charisma",
+                description="argues with himself",
+                opponent="HERO",
+                modifier=1,
+                opposing_modifier=2,
+            ),
+            state,
+            rng=_Rolls(16, 10),
+        )
+    )
 
-    assert result == "Cannot resolve check — actor and opponent must be different characters."
+    assert (
+        result
+        == "Cannot resolve check — actor and opponent must be different characters."
+    )
     assert state.history == []
 
 
@@ -1800,10 +2077,20 @@ def test_contested_check_rejects_remote_opponent_without_logging():
     state.locations["forest"] = Location(id="forest")
     state.characters["merchant"].location = "forest"
 
-    result = asyncio.run(resolve(Check(
-        actor="hero", ability="charisma", description="bluffs the merchant",
-        opponent="merchant", modifier=1, opposing_modifier=2,
-    ), state, rng=_Rolls(16, 10)))
+    result = asyncio.run(
+        resolve(
+            Check(
+                actor="hero",
+                ability="charisma",
+                description="bluffs the merchant",
+                opponent="merchant",
+                modifier=1,
+                opposing_modifier=2,
+            ),
+            state,
+            rng=_Rolls(16, 10),
+        )
+    )
 
     assert "not in the same location" in result
     assert state.history == []
@@ -1813,10 +2100,20 @@ def test_contested_check_rejects_dead_opponent_without_logging():
     state = _state()
     state.characters["merchant"].stats.hp = 0
 
-    result = asyncio.run(resolve(Check(
-        actor="hero", ability="charisma", description="intimidates the merchant",
-        opponent="merchant", modifier=1, opposing_modifier=2,
-    ), state, rng=_Rolls(16, 10)))
+    result = asyncio.run(
+        resolve(
+            Check(
+                actor="hero",
+                ability="charisma",
+                description="intimidates the merchant",
+                opponent="merchant",
+                modifier=1,
+                opposing_modifier=2,
+            ),
+            state,
+            rng=_Rolls(16, 10),
+        )
+    )
 
     assert result == "Cannot resolve check — opponent 'merchant' is dead."
     assert state.history == []
@@ -1836,13 +2133,17 @@ def test_dead_character_cannot_use_any_character_tool_or_self_update():
     ]
 
     for tool in tools:
-        result = asyncio.run(resolve(
-            tool.model_copy(update={
-                "remember": "a posthumous discovery",
-                "new_goal": "haunt the innkeeper",
-            }),
-            state,
-        ))
+        result = asyncio.run(
+            resolve(
+                tool.model_copy(
+                    update={
+                        "remember": "a posthumous discovery",
+                        "new_goal": "haunt the innkeeper",
+                    }
+                ),
+                state,
+            )
+        )
         assert "is dead" in result
 
     assert hero.location == "tavern"
@@ -1854,15 +2155,17 @@ def test_dead_character_cannot_use_any_character_tool_or_self_update():
 def test_rejected_character_action_cannot_apply_optional_self_updates():
     state = _state()
 
-    result = asyncio.run(resolve(
-        Travel(
-            actor="hero",
-            destination="missing-road",
-            remember="the missing road leads north",
-            new_goal="follow the missing road",
-        ),
-        state,
-    ))
+    result = asyncio.run(
+        resolve(
+            Travel(
+                actor="hero",
+                destination="missing-road",
+                remember="the missing road leads north",
+                new_goal="follow the missing road",
+            ),
+            state,
+        )
+    )
 
     assert result == "Cannot move to 'missing-road' — location not found."
     assert state.characters["hero"].location == "tavern"
@@ -1875,11 +2178,13 @@ def test_attack_resolution_uses_injected_rng(monkeypatch):
     state = _state()
     monkeypatch.setattr("src.engine.rules.random.randint", lambda _low, _high: 1)
 
-    result = asyncio.run(resolve(
-        Attack(actor="hero", target="merchant"),
-        state,
-        rng=_Rolls(4),
-    ))
+    result = asyncio.run(
+        resolve(
+            Attack(actor="hero", target="merchant"),
+            state,
+            rng=_Rolls(4),
+        )
+    )
 
     assert "for 4 damage" in result
     assert state.characters["merchant"].stats.hp == 1
@@ -1888,15 +2193,17 @@ def test_attack_resolution_uses_injected_rng(monkeypatch):
 def test_deterministic_dispatch_normalizes_character_ids_and_self_updates():
     state = _state()
 
-    result = asyncio.run(resolve(
-        Attack(
-            actor="HERO",
-            target="Merchant",
-            remember="the merchant carries a silver key",
-        ),
-        state,
-        rng=_Rolls(4),
-    ))
+    result = asyncio.run(
+        resolve(
+            Attack(
+                actor="HERO",
+                target="Merchant",
+                remember="the merchant carries a silver key",
+            ),
+            state,
+            rng=_Rolls(4),
+        )
+    )
 
     assert "hero attacks merchant for 4 damage" in result
     assert state.characters["merchant"].stats.hp == 1

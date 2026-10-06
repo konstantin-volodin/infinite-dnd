@@ -47,7 +47,7 @@ class StateManager:
         *,
         resume: bool = False,
     ):
-        self.ROOT_DIR = Path(__file__).resolve().parents[3]
+        self.ROOT_DIR = Path.cwd()
         self.scenario = scenario or pick_scenario()
         self.manifest = read_manifest(self.scenario)
         self.setup_dir = scenario_dir(self.scenario)
@@ -97,12 +97,17 @@ class StateManager:
 
         factions_path = self.setup_dir / "factions.json"
         factions = (
-            {faction["id"]: Faction.model_validate(faction) for faction in self.read_json(factions_path)}
+            {
+                faction["id"]: Faction.model_validate(faction)
+                for faction in self.read_json(factions_path)
+            }
             if factions_path.exists()
             else {}
         )
 
-        return WorldState(locations=locations, characters=characters, quests=quests, factions=factions)
+        return WorldState(
+            locations=locations, characters=characters, quests=quests, factions=factions
+        )
 
     def load_state(self, world_state_file: str | None = None) -> WorldState:
         """Load saved state, or create fresh from setup if none exists."""
@@ -110,7 +115,9 @@ class StateManager:
         if world_state_file:
             state_path = self.state_dir / world_state_file
             if not state_path.exists():
-                raise FileNotFoundError(f"Specified world state file {state_path} does not exist.")
+                raise FileNotFoundError(
+                    f"Specified world state file {state_path} does not exist."
+                )
             return WorldState(**self.read_json(state_path))
 
         else:

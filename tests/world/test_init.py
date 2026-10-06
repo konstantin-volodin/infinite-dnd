@@ -19,7 +19,9 @@ def test_list_scenarios(scenarios):
 def test_read_manifest(scenarios):
     for s in scenarios:
         manifest = read_manifest(s)
-        assert "title" in manifest and "pc" in manifest and "hook" in manifest, f"manifest missing keys for {s}"
+        assert "title" in manifest and "pc" in manifest and "hook" in manifest, (
+            f"manifest missing keys for {s}"
+        )
 
 
 def test_pick_scenario_deterministic(scenarios):
@@ -41,8 +43,7 @@ def test_scenario_location_connections_resolve_bidirectionally(scenarios):
         locations_path = scenario_dir(scenario) / "locations.json"
         with locations_path.open(encoding="utf-8") as locations_file:
             locations = {
-                location["id"]: location
-                for location in json.load(locations_file)
+                location["id"]: location for location in json.load(locations_file)
             }
 
         for location_id, location in locations.items():

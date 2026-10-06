@@ -53,7 +53,10 @@ def _provider_reachable() -> bool:
         return bool(os.getenv("ANTHROPIC_API_KEY"))
     if provider == "openai":
         return bool(os.getenv("OPENAI_API_KEY"))
-    url = os.getenv("LLM_BASE_URL", "http://localhost:1234/v1").removesuffix("/v1") + "/health"
+    url = (
+        os.getenv("LLM_BASE_URL", "http://localhost:1234/v1").removesuffix("/v1")
+        + "/health"
+    )
     try:
         r = urllib.request.urlopen(url, timeout=5)
         ok = r.status == 200
@@ -66,7 +69,9 @@ def _provider_reachable() -> bool:
 @pytest.fixture(autouse=True)
 def _skip_without_provider():
     if not _provider_reachable():
-        pytest.skip("no live LLM provider reachable (local server down or ANTHROPIC_API_KEY unset)")
+        pytest.skip(
+            "no live LLM provider reachable (local server down or ANTHROPIC_API_KEY unset)"
+        )
 
 
 @pytest.fixture
@@ -88,27 +93,46 @@ def _pick_travel_target(state: WorldState, char: Character) -> str:
 def _assert_tool(messages: list[Any], name: str) -> None:
     calls = [
         getattr(p, "tool_name", None)
-        for m in messages for p in getattr(m, "parts", [])
+        for m in messages
+        for p in getattr(m, "parts", [])
         if getattr(p, "part_kind", None) == "tool-call"
     ]
     assert name in calls, f"expected {name!r}, saw {calls!r}"
 
 
 def _run(
-    agent: Any, prefix: str, prompt: str, deps: Any, tool: str, *, expect_done: bool = False,
+    agent: Any,
+    prefix: str,
+    prompt: str,
+    deps: Any,
+    tool: str,
+    *,
+    expect_done: bool = False,
 ) -> tuple[Any, list[Any]]:
     with capture_run_messages() as msgs:
-        result = agent.run_sync(prompt, deps=deps, model_settings=_MODEL_SETTINGS, usage_limits=_USAGE_LIMITS)
+        result = agent.run_sync(
+            prompt,
+            deps=deps,
+            model_settings=_MODEL_SETTINGS,
+            usage_limits=_USAGE_LIMITS,
+        )
     _assert_tool(msgs, tool)
     if expect_done:
         _assert_tool(msgs, "done")
 
     trace = [
-        {"kind": type(m).__name__, "parts": [
-            {"kind": getattr(p, "part_kind", type(p).__name__), "tool": getattr(p, "tool_name", None),
-             "content": getattr(p, "content", None), "args": getattr(p, "args", None)}
-            for p in getattr(m, "parts", [])
-        ]}
+        {
+            "kind": type(m).__name__,
+            "parts": [
+                {
+                    "kind": getattr(p, "part_kind", type(p).__name__),
+                    "tool": getattr(p, "tool_name", None),
+                    "content": getattr(p, "content", None),
+                    "args": getattr(p, "args", None),
+                }
+                for p in getattr(m, "parts", [])
+            ],
+        }
         for m in msgs
     ]
     path = LOG_DIR / f"{_stamp}-{prefix}-{tool}.md"
@@ -122,17 +146,23 @@ def _run(
 
 # ── server ───────────────────────────────────────────────────────────────
 
+
 def test_server_health():
     assert _provider_reachable()
 
 
 def test_basic_completion():
-    a = Agent(create_model(), system_prompt="reply with one word only.", output_type=str)
-    resp = a.run_sync("Say 'hello'.", model_settings={"temperature": 0.0, "thinking": False}).output
+    a = Agent(
+        create_model(), system_prompt="reply with one word only.", output_type=str
+    )
+    resp = a.run_sync(
+        "Say 'hello'.", model_settings={"temperature": 0.0, "thinking": False}
+    ).output
     assert isinstance(resp, str) and len(resp.strip()) > 0
 
 
 # ── character (intent generator) ─────────────────────────────────────────
+
 
 def test_character_contextual_tools(state):
     char = _pick_char(state)
@@ -140,7 +170,9 @@ def test_character_contextual_tools(state):
     other.location = char.location
 
     deps = CharacterDeps(char=char, state=state)
-    ctx = RunContext(deps=deps, model=create_model(), usage=RunUsage(), agent=character_agent)
+    ctx = RunContext(
+        deps=deps, model=create_model(), usage=RunUsage(), agent=character_agent
+    )
     output_toolset = character_agent._output_toolset
     prepare_output_tools = character_agent._prepare_output_tools
     assert output_toolset is not None
@@ -149,23 +181,37 @@ def test_character_contextual_tools(state):
     assert prepared is not None
     tools = {n: t.tool_def for n, t in asyncio.run(prepared.get_tools(ctx)).items()}
 
-    expected_targets = [c.id for c in state.characters.values() if c.location == char.location and c.id != char.id]
+    expected_targets = [
+        c.id
+        for c in state.characters.values()
+        if c.location == char.location and c.id != char.id
+    ]
     for t in expected_targets:
-        assert t in tools["speak"].description, f"speak description missing target {t!r}"
+        assert t in tools["speak"].description, (
+            f"speak description missing target {t!r}"
+        )
 
     assert "travel" in tools, "travel tool should exist when connections are available"
-    expected_travel = [cid for cid in state.locations[char.location].connections if cid in state.locations]
+    expected_travel = [
+        cid
+        for cid in state.locations[char.location].connections
+        if cid in state.locations
+    ]
     for loc in expected_travel:
-        assert loc in tools["travel"].description, f"travel description missing option {loc!r}"
+        assert loc in tools["travel"].description, (
+            f"travel description missing option {loc!r}"
+        )
 
 
 def test_character_action_intent(state):
     char = _pick_char(state)
     before = len(state.history)
     intent, _ = _run(
-        character_agent, "character",
+        character_agent,
+        "character",
         'Call `action` once with description "carefully inspects the old fountain". No other tools.',
-        CharacterDeps(char=char, state=state), "action",
+        CharacterDeps(char=char, state=state),
+        "action",
     )
     assert isinstance(intent, Action), f"expected Action, got {type(intent).__name__}"
     assert intent.actor == char.id
@@ -181,9 +227,11 @@ def test_character_speak_intent(state):
     before = len(state.history)
     msg = "I have a feeling something important is happening nearby."
     intent, _ = _run(
-        character_agent, "character",
+        character_agent,
+        "character",
         f'Call `speak` once with message exactly "{msg}". No other tools.',
-        CharacterDeps(char=char, state=state), "speak",
+        CharacterDeps(char=char, state=state),
+        "speak",
     )
     assert isinstance(intent, Speak)
     assert intent.actor == char.id and intent.message == msg
@@ -198,9 +246,11 @@ def test_character_travel_intent(state):
     target = _pick_travel_target(state, char)
     before = len(state.history)
     intent, _ = _run(
-        character_agent, "character",
+        character_agent,
+        "character",
         f'Call `travel` once to "{target}". No other tools.',
-        CharacterDeps(char=char, state=state), "travel",
+        CharacterDeps(char=char, state=state),
+        "travel",
     )
     assert isinstance(intent, Travel)
     assert intent.actor == char.id and intent.destination == target
@@ -214,29 +264,44 @@ def test_character_travel_intent(state):
 
 # ── resolver sub-agent (free-form Action path) ──────────────────────────
 
+
 def test_resolver_remember(state):
     char = _pick_char(state)
     before = len(state.history)
     knowledge = "The old fountain has a loose stone ring around its basin."
     output, _ = _run(
-        resolver_agent, "resolver",
+        resolver_agent,
+        "resolver",
         f'Call `remember` once with knowledge exactly "{knowledge}". Then call `done` mentioning the fountain.',
-        ActionResolverDeps(char=char, state=state, description="carefully inspects the old fountain"),
-        "remember", expect_done=True,
+        ActionResolverDeps(
+            char=char, state=state, description="carefully inspects the old fountain"
+        ),
+        "remember",
+        expect_done=True,
     )
     assert knowledge in char.knowledge
     assert len(state.history) == before + 1
     assert state.history[-1].text == f"{char.id} learns: {knowledge}"
-    assert "fountain" in output.lower(), f"done output should mention fountain: {output!r}"
+    assert "fountain" in output.lower(), (
+        f"done output should mention fountain: {output!r}"
+    )
 
 
 def test_resolver_discover_exit(state):
     char = _pick_char(state)
     ctx = RunContext(
-        deps=ActionResolverDeps(char=char, state=state, description="asks about a hidden cellar"),
-        model=create_model(), usage=RunUsage(), agent=resolver_agent,
+        deps=ActionResolverDeps(
+            char=char, state=state, description="asks about a hidden cellar"
+        ),
+        model=create_model(),
+        usage=RunUsage(),
+        agent=resolver_agent,
     )
-    output = discover_exit_tool(ctx, name="Hidden Cellar", description="A narrow stone stair descends into a damp cellar.")
+    output = discover_exit_tool(
+        ctx,
+        name="Hidden Cellar",
+        description="A narrow stone stair descends into a damp cellar.",
+    )
     loc = state.locations.get("hidden-cellar")
     assert loc, "hidden-cellar should be created"
     assert char.location in loc.connections

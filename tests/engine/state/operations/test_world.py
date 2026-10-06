@@ -15,8 +15,15 @@ def state() -> WorldState:
             "hero": Character(id="hero", role="warrior", location="tavern"),
         },
         quests={
-            "q1": Quest(id="q1", title="Clear the Cave", description="Defeat the creatures", owner="hero"),
-            "q2": Quest(id="q2", title="Ownerless Task", description="no owner", owner=""),
+            "q1": Quest(
+                id="q1",
+                title="Clear the Cave",
+                description="Defeat the creatures",
+                owner="hero",
+            ),
+            "q2": Quest(
+                id="q2", title="Ownerless Task", description="no owner", owner=""
+            ),
         },
     )
 
@@ -27,6 +34,7 @@ def ops(state) -> WorldOperations:
 
 
 # ============ QUESTS ============
+
 
 def test_advance_quest_awards_xp(state, ops):
     msg = ops.advance_quest("q1", advance=True, step="found the entrance")
@@ -73,7 +81,9 @@ def test_advance_quest_rejects_simultaneous_progress_and_failure(state, ops):
         advance=True,
     )
 
-    assert msg == "Cannot advance quest — 'q1' cannot advance and fail in the same update."
+    assert (
+        msg == "Cannot advance quest — 'q1' cannot advance and fail in the same update."
+    )
     assert quest.status == "active"
     assert quest.current_step == 0
     assert quest.steps == []
@@ -88,7 +98,9 @@ def test_advance_ownerless_quest_no_xp(state, ops):
 
 
 @pytest.mark.parametrize("terminal_status", ["completed", "failed", "Completed"])
-def test_terminal_quest_rejects_stale_updates_without_awarding_xp(state, ops, terminal_status):
+def test_terminal_quest_rejects_stale_updates_without_awarding_xp(
+    state, ops, terminal_status
+):
     quest = state.quests["q1"]
     quest.status = terminal_status
     quest.current_step = 1
@@ -97,7 +109,9 @@ def test_terminal_quest_rejects_stale_updates_without_awarding_xp(state, ops, te
     state.last_quest_advance_time = 3
     state.time = 8
 
-    msg = ops.advance_quest("q1", new_status="completed", step="duplicate update", advance=True)
+    msg = ops.advance_quest(
+        "q1", new_status="completed", step="duplicate update", advance=True
+    )
 
     assert "already" in msg
     assert quest.status == terminal_status
@@ -108,7 +122,13 @@ def test_terminal_quest_rejects_stale_updates_without_awarding_xp(state, ops, te
 
 
 def test_advance_quest_with_plan_increments_and_logs(state, ops):
-    ops.add_quest("q5", title="Clear the Ruins", description="", owner="hero", plan=["scout the entrance", "clear the first hall", "defeat the guardian"])
+    ops.add_quest(
+        "q5",
+        title="Clear the Ruins",
+        description="",
+        owner="hero",
+        plan=["scout the entrance", "clear the first hall", "defeat the guardian"],
+    )
     msg = ops.advance_quest("q5", advance=True)
     quest = state.quests["q5"]
     assert quest.current_step == 1
@@ -140,7 +160,9 @@ def test_planned_quest_rejects_completion_before_final_objective(state, ops):
     )
     quest = state.quests["q5"]
 
-    msg = ops.advance_quest("q5", new_status="completed", step="found the steward's key")
+    msg = ops.advance_quest(
+        "q5", new_status="completed", step="found the steward's key"
+    )
 
     assert "has not achieved its final objective" in msg
     assert quest.status == "active"
@@ -168,9 +190,13 @@ def test_planned_quest_rejects_completion_after_exhausted_active_plan(state, ops
     quest = state.quests["q5"]
     ops.advance_quest("q5", advance=True)
     ops.advance_quest("q5", advance=True)
-    quest.status = "active"  # emulate a stale snapshot whose final pointer was already exhausted
+    quest.status = (
+        "active"  # emulate a stale snapshot whose final pointer was already exhausted
+    )
 
-    msg = ops.advance_quest("q5", new_status="completed", step="a clue points to the circlet")
+    msg = ops.advance_quest(
+        "q5", new_status="completed", step="a clue points to the circlet"
+    )
 
     assert "has not achieved its final objective" in msg
     assert quest.status == "active"
@@ -270,7 +296,9 @@ def test_advance_quest_step_without_advance_no_xp(state, ops):
 
 def test_add_quest(state, ops):
     history_before = len(state.history)
-    msg = ops.add_quest("q3", title="Find the Map", description="locate the buried chart", owner="hero")
+    msg = ops.add_quest(
+        "q3", title="Find the Map", description="locate the buried chart", owner="hero"
+    )
     assert msg == "Quest 'q3' added."
     assert "q3" in state.quests and state.quests["q3"].owner == "hero"
     assert state.quests["q3"].plan == []
@@ -372,7 +400,9 @@ def test_entity_creation_rejects_ids_without_letters_or_numbers(state, ops):
     history_before = list(state.history)
 
     assert "quest ID must contain" in ops.add_quest("!!!", title="Invalid")
-    assert "character ID must contain" in ops.spawn_character("!!!", "stranger", "tavern")
+    assert "character ID must contain" in ops.spawn_character(
+        "!!!", "stranger", "tavern"
+    )
     assert "location ID must contain" in ops.add_location("!!!")
 
     assert "!!!" not in state.quests
@@ -420,13 +450,16 @@ def test_redundant_active_status_does_not_reset_quest_stall_time(state, ops):
 
 # ============ CHARACTERS ============
 
+
 def test_spawn_delete_character(state, ops):
     ops.spawn_character("guard", "warrior", "tavern")
     assert "guard" in state.characters
     assert state.characters["guard"].location == "tavern"
     ops.delete_npc("guard", "Left the town.")
     assert "guard" not in state.characters
-    assert "Cannot spawn" in ops.spawn_character("guard", "warrior", "nowhere")  # bad location
+    assert "Cannot spawn" in ops.spawn_character(
+        "guard", "warrior", "nowhere"
+    )  # bad location
 
 
 def test_spawn_character_normalizes_known_location_id(state, ops):
@@ -554,6 +587,7 @@ def test_delete_npc_removes_dangling_relationships(state, ops):
 
 # ============ ITEMS ============
 
+
 def test_create_item(state, ops):
     ops.create_item("torch", "forest")
     assert "torch" in state.locations["forest"].items
@@ -588,7 +622,9 @@ def test_create_item_rejects_existing_item_elsewhere_in_world(state, ops):
     assert state.history == history_before
 
 
-def test_rename_item_records_held_item_state_and_prevents_repeating_transition(state, ops):
+def test_rename_item_records_held_item_state_and_prevents_repeating_transition(
+    state, ops
+):
     state.characters["hero"].inventory = ["sealed wax letter"]
 
     result = ops.rename_item("hero", "sealed wax letter", "opened wax letter")
@@ -601,6 +637,7 @@ def test_rename_item_records_held_item_state_and_prevents_repeating_transition(s
 
 
 # ============ LOCATIONS ============
+
 
 def test_add_modify_location(state, ops):
     ops.add_location("cave", description="damp cave", connections=["forest"])
@@ -652,6 +689,7 @@ def test_add_location_rejects_unknown_connection_without_mutating(
 
 
 # ============ EVENTS ============
+
 
 def test_world_event_witnessed_by_present_characters(state, ops):
     ops.spawn_character("guard", "warrior", "tavern")

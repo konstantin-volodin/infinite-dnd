@@ -38,8 +38,12 @@ def _events(n: int) -> list[HistoryEvent]:
 
 # ============ digest() fallback ============
 
+
 def test_digest_joins_event_texts():
-    events = [HistoryEvent(text="hero enters", location="tavern"), HistoryEvent(text="hero waits", location="tavern")]
+    events = [
+        HistoryEvent(text="hero enters", location="tavern"),
+        HistoryEvent(text="hero waits", location="tavern"),
+    ]
     assert digest(events) == "hero enters hero waits"
 
 
@@ -51,6 +55,7 @@ def test_digest_truncates_long_output():
 
 
 # ============ compact_history() trigger/selection ============
+
 
 def test_below_threshold_does_not_compact():
     state = WorldState(history=_events(HISTORY_COMPACT_THRESHOLD))
@@ -65,15 +70,23 @@ def test_above_threshold_archives_oldest_and_keeps_recent_tail(monkeypatch):
     async def fake_run(_prompt, deps, usage_limits):
         class _Result:
             output = f"summary of {len(deps.events)} events"
+
             def all_messages(self):
                 return []
+
         return _Result()
 
     monkeypatch.setattr("src.engine.runtime.chronicle.chronicler_agent.run", fake_run)
     asyncio.run(compact_history(state, _Logger()))
 
     assert len(state.history) == HISTORY_KEEP_RECENT
-    assert [e.text for e in state.history] == [f"event {i}" for i in range(HISTORY_COMPACT_THRESHOLD + 1 - HISTORY_KEEP_RECENT, HISTORY_COMPACT_THRESHOLD + 1)]
+    assert [e.text for e in state.history] == [
+        f"event {i}"
+        for i in range(
+            HISTORY_COMPACT_THRESHOLD + 1 - HISTORY_KEEP_RECENT,
+            HISTORY_COMPACT_THRESHOLD + 1,
+        )
+    ]
     archived_count = HISTORY_COMPACT_THRESHOLD + 1 - HISTORY_KEEP_RECENT
     assert state.chronicle == [f"summary of {archived_count} events"]
 
@@ -128,6 +141,7 @@ def test_blank_model_summary_falls_back_to_digest(monkeypatch):
 
 # ============ replay integration ============
 
+
 def test_compact_history_playback_never_calls_chronicler_agent(tmp_path, monkeypatch):
     path = tmp_path / "run.jsonl"
     ReplayTape.recording(path).chronicle("The hero spent months rebuilding the docks.")
@@ -152,8 +166,10 @@ def test_compact_history_records_chronicle_entry_for_replay(tmp_path, monkeypatc
     async def fake_run(_prompt, deps, usage_limits):
         class _Result:
             output = "a recorded summary"
+
             def all_messages(self):
                 return []
+
         return _Result()
 
     monkeypatch.setattr("src.engine.runtime.chronicle.chronicler_agent.run", fake_run)
