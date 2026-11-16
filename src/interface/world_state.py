@@ -105,7 +105,8 @@ def load_view(
         "scenario": scenario,
         "run_id": run_id,
         "title": manifest.get("title", scenario),
-        "pc": manifest.get("pc"),
+        # A successor may have taken over; older snapshots predate the field.
+        "pc": state.get("protagonist") or manifest.get("pc"),
         "tick": tick,
         "ticks": ticks,
         "latest_tick": ticks[-1],
