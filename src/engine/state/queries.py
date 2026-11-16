@@ -76,6 +76,41 @@ def connected_location_ids(state: WorldState, location_id: str) -> list[str]:
     return [c for c in loc.connections if c in state.locations]
 
 
+def nearby_location_ids(
+    state: WorldState, origins: list[str], hops: int = 2
+) -> list[str]:
+    """Locations within `hops` connections of any origin — keeps prompts bounded as the map grows."""
+    seen = [origin for origin in dict.fromkeys(origins) if origin in state.locations]
+    frontier = list(seen)
+    for _ in range(hops):
+        frontier = list(
+            dict.fromkeys(
+                neighbour
+                for location_id in frontier
+                for neighbour in connected_location_ids(state, location_id)
+                if neighbour not in seen
+            )
+        )
+        seen.extend(frontier)
+    return seen
+
+
+def live_factions(state: WorldState) -> list[Faction]:
+    """Factions with a clock that can still advance, in stable id order."""
+    return [
+        faction
+        for faction in (state.factions[fid] for fid in sorted(state.factions))
+        if any(
+            not clock.consequence_triggered
+            and not (
+                clock.fail_quest_id
+                and state.quests[clock.fail_quest_id].status != "active"
+            )
+            for clock in faction.clocks
+        )
+    ]
+
+
 def quest_deadline_clocks(
     state: WorldState, quest_ids: set[str]
 ) -> list[tuple[Faction, ProgressClock]]:

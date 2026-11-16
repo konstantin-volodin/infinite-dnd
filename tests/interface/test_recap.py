@@ -13,7 +13,6 @@ from src.interface.recap import build_recap, main
 
 def _state() -> WorldState:
     return WorldState(
-        minutes_elapsed=1440,
         chronicle=["Long ago, the village burned.", "The hero was born in the ashes."],
         locations={
             "tavern": Location(id="tavern"),
@@ -64,77 +63,30 @@ def _state() -> WorldState:
     )
 
 
-def _chapters() -> list[dict]:
-    return [
-        {
-            "number": 1,
-            "title": "The Burning",
-            "prose": "The village burned.\n\nThe hero rose from the ashes.",
-            "summary": "The village burned.",
-            "events": [
-                {
-                    "text": "Fire spreads.",
-                    "location": "tavern",
-                    "characters": [],
-                    "minutes_elapsed": 1500,
-                }
-            ],
-        },
-        {
-            "number": 2,
-            "title": "The Road",
-            "prose": "The hero walked on.",
-            "summary": "The hero left.",
-            "events": [
-                {
-                    "text": "Hero leaves.",
-                    "location": "forest",
-                    "characters": ["hero"],
-                    "minutes_elapsed": 60,
-                }
-            ],
-        },
-    ]
-
-
 def test_title_and_metadata_header():
     md = build_recap(
         WorldState(), title="The Ashen Vale", scenario="ashen-vale", run_id="run-1"
     )
-    assert md.startswith("# The Ashen Vale\n\n*ashen-vale · run-1*")
+    assert md.startswith("# The Ashen Vale — Recap")
+    assert "*ashen-vale · run-1*" in md
 
 
-def test_chapters_render_in_order_with_their_raw_events():
-    md = build_recap(
-        _state(), title="Demo", scenario="demo", run_id="run-1", chapters=_chapters()
-    )
-    assert "## Chapter 1: The Burning\n\nThe village burned.\n\nThe hero rose" in md
-    assert (
-        md.index("## Chapter 1")
-        < md.index("## Chapter 2")
-        < md.index("## Since the last chapter")
-    )
-    assert "<summary>What happened (1 events)</summary>" in md
-    assert "**day 1 · 00:00 · tavern**\n\n- Fire spreads." in md
-    # clocks run on across chapters: chapter 2 starts after chapter 1's 1500 minutes
-    assert "**day 2 · 01:00 · forest**\n\n- Hero leaves." in md
-    assert "## Previously…" not in md  # chapters supersede the chronicle
-
-
-def test_chronicle_renders_as_previously_for_runs_without_chapters():
+def test_chronicle_renders_as_previously_section():
     md = build_recap(_state(), title="Demo", scenario="demo", run_id="run-1")
     assert "## Previously…" in md
     assert "Long ago, the village burned." in md
-    assert md.index("## Previously…") < md.index("## Since the last chapter")
+    assert md.index("## Previously…") < md.index("## The Story So Far")
 
 
-def test_unarchived_tail_groups_by_day_and_location():
+def test_story_groups_by_day_and_location():
     md = build_recap(_state(), title="Demo", scenario="demo", run_id="run-1")
     assert (
-        "**day 1 · 00:00 · tavern**\n\n- Hero arrives at the tavern.\n- Hero orders a drink."
-        in md
-    )
-    assert "**day 1 · 00:40 · forest**\n\n- Hero travels to the forest." in md
+        "### day 1 · 00:40 ·" not in md
+    )  # header uses the clock at the *start* of the group, not its end
+    assert "### day 1 · 00:30 · tavern" in md
+    assert "Hero arrives at the tavern. Hero orders a drink." in md
+    assert "### day 2 · 00:00 · forest" in md
+    assert "Hero travels to the forest." in md
 
 
 def test_quest_outcomes_show_status_and_progress():
@@ -156,9 +108,9 @@ def test_epilogue_reports_each_characters_fate():
 
 def test_empty_state_does_not_crash():
     md = build_recap(WorldState(), title="Empty", scenario="demo", run_id="run-1")
-    assert md.startswith("# Empty\n")
+    assert md.startswith("# Empty — Recap")
     assert "## Previously…" not in md
-    assert "## Since the last chapter" not in md
+    assert "## The Story So Far" not in md
     assert "## Quest Outcomes" not in md
     assert "## Epilogue" not in md
 
@@ -174,21 +126,7 @@ def test_main_writes_recap_next_to_snapshot(tmp_path):
     assert exit_code == 0
     out_path = run_dir / "run-1_recap.md"
     assert out_path.exists()
-    assert out_path.read_text(encoding="utf-8").startswith("# demo\n")
-
-
-def test_main_includes_the_runs_chapter_files(tmp_path):
-    run_dir = tmp_path / "demo" / "run-1"
-    (run_dir / "chapters").mkdir(parents=True)
-    (run_dir / "world_state_0.json").write_text(_state().model_dump_json())
-    for chapter in _chapters():
-        path = run_dir / "chapters" / f"chapter_{chapter['number']:04d}.json"
-        path.write_text(json.dumps(chapter), encoding="utf-8")
-
-    main(["--state-dir", str(tmp_path)])
-
-    book = (run_dir / "run-1_recap.md").read_text(encoding="utf-8")
-    assert "## Chapter 2: The Road" in book
+    assert out_path.read_text(encoding="utf-8").startswith("# demo — Recap")
 
 
 def test_main_errors_when_no_runs_found(tmp_path, capsys):

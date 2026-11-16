@@ -1,3 +1,4 @@
+import json
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -307,3 +308,41 @@ def test_digest_legacy_repr_string():
         "cache_read_tokens": 7,
         "output_tokens": 3,
     }
+
+
+def test_failed_agent_run_logs_the_models_messages(tmp_path):
+    import asyncio
+
+    import pytest
+    from pydantic_ai import Agent, ToolOutput
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+    from pydantic_ai.messages import TextPart
+    from pydantic_ai.models.function import FunctionModel
+
+    def prose_only(_messages, _info):
+        return ModelResponse(parts=[TextPart(content="I refuse to call tools.")])
+
+    agent = Agent(FunctionModel(prose_only), output_type=ToolOutput(int, name="done"))
+    logger = Logger(character_id="hero", max_turns=1, log_dir=tmp_path)
+    logger.log_turn(1)
+
+    async def run():
+        with logger.run("dm"):
+            await agent.run("go")
+
+    with pytest.raises(UnexpectedModelBehavior):
+        asyncio.run(run())
+    logger.close()
+
+    lines = (tmp_path / f"{logger.session_id}.log").read_text().splitlines()
+    entries = [json.loads(line) for line in lines]
+    failed = [e for e in entries if e["event"] == "agent_run_failed"]
+    texts = [
+        part.get("content")
+        for e in entries
+        if e["event"] == "llm_message"
+        for part in e["message"]["parts"]
+    ]
+    assert failed[0]["label"] == "dm"
+    assert failed[0]["error"] == "UnexpectedModelBehavior"
+    assert texts.count("I refuse to call tools.") == 2  # first try and the retry

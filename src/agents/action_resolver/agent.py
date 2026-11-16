@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic_ai import Agent, RunContext, ToolOutput
-from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from src.engine.state import (
@@ -688,7 +688,7 @@ async def _resolve_action(
                 prompt, deps=deps, usage=usage, usage_limits=_ACTION_USAGE
             )
         output = " ".join(deps.effects) if deps.effects else result.output.strip()
-    except UsageLimitExceeded:
+    except (UsageLimitExceeded, UnexpectedModelBehavior):
         output = (
             f"{char.id}'s action produced the recorded change."
             if len(state.history) > history_size
@@ -723,10 +723,20 @@ class ActionResolverDeps:
 agent: Agent[ActionResolverDeps, str] = Agent(
     model=create_model(),
     deps_type=ActionResolverDeps,
-    output_type=ToolOutput(str, name="done"),
+    # Small local models often answer with the summary as plain text (or the
+    # literal `done("...")`) instead of calling `done`; both are the same output.
+    output_type=[ToolOutput(str, name="done"), str],
     end_strategy="exhaustive",
     instructions="Resolve exactly one character action into concrete state changes. Report the outcome in one short, plain sentence — no scene-setting or flourishes.",
 )
+
+_TEXT_DONE_CALL = re.compile(r"""^\s*done\(\s*(["'])(?P<summary>.*)\1\s*\)\s*$""", re.S)
+
+
+@agent.output_validator
+def _unwrap_text_done(output: str) -> str:
+    match = _TEXT_DONE_CALL.match(output)
+    return match.group("summary") if match else output
 
 
 @agent.system_prompt

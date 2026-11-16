@@ -94,10 +94,10 @@ def load_view(
             f"No snapshot for tick {tick} in scenario '{scenario}' run '{run_id}'"
         )
 
-    state = read_snapshot(run_path, tick)
+    state = _read_snapshot(run_path, tick)
     tick_index = ticks.index(tick)
     prev_state = (
-        read_snapshot(run_path, ticks[tick_index - 1]) if tick_index > 0 else None
+        _read_snapshot(run_path, ticks[tick_index - 1]) if tick_index > 0 else None
     )
     manifest = _safe_manifest(scenario)
 
@@ -122,7 +122,7 @@ def load_series(
     run_path = Path(state_dir) / scenario / run_id
     result: dict[str, list[dict[str, int]]] = {}
     for tick in list_ticks(run_path):
-        snapshot = read_snapshot(run_path, tick)
+        snapshot = _read_snapshot(run_path, tick)
         for character_id, character in snapshot.get("characters", {}).items():
             stats = character.get("stats", {})
             result.setdefault(character_id, []).append(
@@ -136,7 +136,7 @@ def load_series(
     return result
 
 
-def read_snapshot(run_path: Path, tick: int) -> dict[str, Any]:
+def _read_snapshot(run_path: Path, tick: int) -> dict[str, Any]:
     with (run_path / f"world_state_{tick}.json").open("r", encoding="utf-8") as handle:
         return json.load(handle)
 

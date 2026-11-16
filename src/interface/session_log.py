@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from pydantic_ai import capture_run_messages
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 
 from src.engine.state.identifiers import new_run_id
@@ -101,15 +102,30 @@ class Logger:
         metrics_before = self._metrics_reader() if self._metrics_reader else None
         self._log("agent_run_started", label=label, turn=self.turn or None)
         try:
-            yield
+            # Successful runs log their own messages; a failed run's messages
+            # are only reachable through this capture.
+            with capture_run_messages() as messages:
+                try:
+                    yield
+                except Exception as exc:
+                    self.log_messages(label, messages)
+                    self._log(
+                        "agent_run_failed",
+                        label=label,
+                        turn=self.turn or None,
+                        error=type(exc).__name__,
+                        message=str(exc),
+                    )
+                    raise
         finally:
-            elapsed = round(time.perf_counter() - start, 3)
+            raw_elapsed = time.perf_counter() - start
+            elapsed = round(raw_elapsed, 3)
             self._active_runs[label].pop()
             if not self._active_runs[label]:
                 del self._active_runs[label]
             output_tps = (
-                round(stats["output_tokens"] / elapsed, 2)
-                if elapsed and stats["output_tokens"]
+                round(stats["output_tokens"] / raw_elapsed, 2)
+                if raw_elapsed and stats["output_tokens"]
                 else None
             )
             metrics_after = (

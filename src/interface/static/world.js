@@ -199,6 +199,10 @@
       if (waitingChanged) renderPlaySuggestions();
     }
 
+    function runKey(scenario, runId) {
+      return `${scenario}/${runId}`;
+    }
+
     async function loadRuns() {
       state.runs = await fetchJson("/api/runs");
       renderRuns();

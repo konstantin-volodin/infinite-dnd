@@ -7,6 +7,7 @@ from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
 
 from src.agents.character.tools import Action, Attack, Speak, Travel, Wait
 from src.engine.runtime.loop import (
+    MAX_FAILED_TICKS,
     _STALL_QUIET_TICKS,
     _advance_grounded_objective,
     _can_accelerate_faction_clock,
@@ -14,7 +15,6 @@ from src.engine.runtime.loop import (
     _can_anchor_new_npc,
     _can_advance_final_objective,
     _can_advance_objective,
-    _campaign_outcome,
     _complete_resolved_final_objective,
     _is_stalled,
     _minimum_action_minutes,
@@ -2123,357 +2123,230 @@ def test_tick_completes_final_objective_when_dm_omits_quest_update(monkeypatch):
     assert state.characters["hero"].stats.xp == 60
 
 
-# ============ CAMPAIGN OUTCOME ============
+# ============ ENDLESS RUN ============
 
 
-def test_campaign_ends_in_victory_when_all_owned_quests_are_completed():
-    state = _state()
-    state.quests["q1"].status = "completed"
-    state.quests["side"] = Quest(
-        id="side",
-        title="Return the Key",
-        description="",
-        owner="hero",
-        status="Completed",
-    )
+class _Run:
+    """Fake persistence and logging around _run_game; records what the loop did."""
 
-    assert _campaign_outcome(state, "hero") == "completed"
+    def __init__(self, monkeypatch, state: WorldState, *, latest: str | None = None):
+        self.events: list[tuple[str, dict]] = []
+        self.saves: list[int] = []
+        self.closed: list[dict] = []
+        self.turns: list[int] = []
+        run = self
 
+        class Manager:
+            run_id = "test-run"
+            scenario = "demo"
+            manifest = {"pc": "hero", "title": "Test Quest", "hook": "Go."}
 
-def test_campaign_ends_in_defeat_when_resolved_owned_quest_failed():
-    state = _state()
-    state.quests["q1"].status = "failed"
+            def __init__(self, **_kwargs):
+                pass
 
-    assert _campaign_outcome(state, "hero") == "failed"
+            def init_state(self):
+                return state
 
+            def latest_snapshot_name(self):
+                return latest
 
-def test_campaign_continues_with_active_owned_quest_or_no_owned_quests():
-    state = _state()
-    assert _campaign_outcome(state, "hero") is None
+            def load_state(self, snapshot):
+                assert snapshot == latest
+                return state
 
-    state.quests["q1"].owner = "someone-else"
-    assert _campaign_outcome(state, "hero") is None
+            def save_state(self, world):
+                run.saves.append(world.time)
+
+        class Log:
+            def __init__(self, **_kwargs):
+                pass
+
+            def log_event(self, event, **kwargs):
+                run.events.append((event, kwargs))
+
+            def log_turn(self, turn):
+                run.turns.append(turn)
+
+            def close(self, **kwargs):
+                run.closed.append(kwargs)
+
+        async def skip(*_args):
+            pass
+
+        monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
+        monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
+        monkeypatch.setattr("src.engine.runtime.loop.compact_history", skip)
+        monkeypatch.setattr("src.engine.runtime.loop.campaign_upkeep", skip)
+        monkeypatch.setattr("src.engine.runtime.loop.FAILED_TICK_BACKOFF_S", 0)
+
+    def names(self) -> list[str]:
+        return [event for event, _ in self.events]
 
 
 def test_resumed_game_logs_next_world_turn_instead_of_restarting_at_one(monkeypatch):
     state = _state()
     state.time = 7
-    logged_turns: list[int] = []
     tick_indexes: list[int] = []
-    closed: list[dict] = []
+    run = _Run(monkeypatch, state, latest="world_state_7.json")
 
-    class Manager:
-        run_id = "resumed-run"
-        scenario = "demo"
-        state_dir = None  # compaction is stubbed out
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Continue it."}
-
-        def __init__(self, **_kwargs):
-            pass
-
-        def latest_snapshot_name(self):
-            return "world_state_7.json"
-
-        def load_state(self, snapshot):
-            assert snapshot == "world_state_7.json"
-            return state
-
-        def save_state(self, _state):
-            pass
-
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, _event, **_kwargs):
-            pass
-
-        def log_turn(self, turn):
-            logged_turns.append(turn)
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def complete_turn(_pc_id, _world, tick_index, _logger, _controller, _replay):
+    async def complete_turn(_pc_id, _world, tick_index, *_args):
         tick_indexes.append(tick_index)
         return True
 
-    async def skip_compaction(*_args):
-        pass
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.tick", complete_turn)
-    monkeypatch.setattr("src.engine.runtime.loop.compact_history", skip_compaction)
-
     asyncio.run(_run_game("demo", "hero", max_turns=1, new_character=None, resume=True))
 
-    assert logged_turns == [8]
+    assert run.turns == [8]
     assert tick_indexes == [7]
-    assert closed == [{"turns_completed": 8}]
+    assert run.closed == [{"turns_completed": 8}]
 
 
-def test_game_loop_stops_immediately_after_campaign_victory(monkeypatch):
+def test_resume_continues_with_the_persisted_protagonist(monkeypatch):
+    state = _state()
+    state.characters["heir"] = Character(id="heir", location="tavern")
+    state.protagonist = "heir"
+    actors: list[str] = []
+    _Run(monkeypatch, state, latest="world_state_0.json")
+
+    async def complete_turn(pc_id, *_args):
+        actors.append(pc_id)
+        return True
+
+    monkeypatch.setattr("src.engine.runtime.loop.tick", complete_turn)
+    asyncio.run(_run_game("demo", None, max_turns=1, new_character=None, resume=True))
+
+    assert actors == ["heir"]
+
+
+def test_campaign_continues_after_every_quest_is_resolved(monkeypatch):
     state = _state()
     ticks: list[int] = []
-    logged_events: list[str] = []
+    run = _Run(monkeypatch, state)
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        state_dir = None  # compaction is stubbed out
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
-
-        def __init__(self, **_kwargs):
-            pass
-
-        def init_state(self):
-            return state
-
-        def latest_snapshot_name(self):
-            return None
-
-        def save_state(self, _state):
-            pass
-
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **_kwargs):
-            logged_events.append(event)
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **_kwargs):
-            pass
-
-    async def finish_quest(_pc_id, world, tick_index, _logger, _controller, _replay):
+    async def finish_quest(_pc_id, world, tick_index, *_args):
         ticks.append(tick_index)
-        world.quests["q1"].status = "completed"
+        world.quests["q1"].status = "failed"
+        return True
 
-    async def skip_compaction(*_args):
-        pass
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.tick", finish_quest)
-    monkeypatch.setattr("src.engine.runtime.loop.compact_history", skip_compaction)
+    assert asyncio.run(_run_game("demo", "hero", max_turns=3, new_character=None))
 
-    succeeded = asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
-
-    assert succeeded is True
-    assert ticks == [0]
-    assert "campaign_completed" in logged_events
+    assert ticks == [0, 1, 2]
+    assert run.saves == [0, 1, 2, 3]
 
 
-def test_game_loop_records_pc_death_on_final_turn(monkeypatch):
+def test_zero_turns_runs_until_stopped(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    closed: list[dict] = []
+    run = _Run(monkeypatch, state)
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        state_dir = None  # compaction is stubbed out
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Survive it."}
+    async def complete_turn(*_args):
+        return True
 
-        def __init__(self, **_kwargs):
-            pass
+    monkeypatch.setattr("src.engine.runtime.loop.tick", complete_turn)
+    asyncio.run(
+        _run_game(
+            "demo",
+            "hero",
+            max_turns=0,
+            new_character=None,
+            stop_check=lambda: state.time >= 40,
+        )
+    )
 
-        def init_state(self):
-            return state
+    assert run.saves[-1] == 40
+    assert ("run_stopped", {}) in run.events
 
-        def latest_snapshot_name(self):
-            return None
 
-        def save_state(self, _state):
-            pass
+def test_pc_death_hands_the_story_to_a_successor(monkeypatch):
+    state = _state()
+    state.characters["hero"].relationships["squire"] = "loyal squire"
+    state.characters["squire"] = Character(id="squire", location="tavern")
+    run = _Run(monkeypatch, state)
 
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def lethal_turn(_pc_id, world, _tick_index, _logger, _controller, _replay):
+    async def lethal_turn(_pc_id, world, *_args):
         world.characters["hero"].stats.hp = 0
         return True
 
-    async def skip_compaction(*_args):
-        pass
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.tick", lethal_turn)
-    monkeypatch.setattr("src.engine.runtime.loop.compact_history", skip_compaction)
-
     asyncio.run(_run_game("demo", "hero", max_turns=1, new_character=None))
 
-    assert ("pc_death", {"pc": "hero"}) in logged_events
-    assert closed == [{"turns_completed": 1}]
+    assert ("pc_death", {"pc": "hero"}) in run.events
+    assert ("successor", {"pc": "squire", "previous": "hero"}) in run.events
+    assert state.protagonist == "squire"
+    assert state.quests["q1"].owner == "squire"
+    assert run.closed == [{"turns_completed": 1}]
 
 
-def test_game_loop_records_provider_failure_without_persisting_partial_turn(
-    monkeypatch,
-):
+def test_failed_tick_is_rolled_back_and_retried_with_the_next_actor(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    saves: list[int] = []
-    closed: list[dict] = []
+    tick_indexes: list[int] = []
+    run = _Run(monkeypatch, state)
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        state_dir = None  # compaction is stubbed out
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
+    async def flaky_turn(_pc_id, world, tick_index, *_args):
+        tick_indexes.append(tick_index)
+        world.characters["hero"].stats.gold += 100  # partial work of the tick
+        if len(tick_indexes) == 1:
+            raise UnexpectedModelBehavior("Exceeded maximum retries (1)")
+        return True
 
-        def __init__(self, **_kwargs):
-            pass
+    monkeypatch.setattr("src.engine.runtime.loop.tick", flaky_turn)
+    assert asyncio.run(_run_game("demo", "hero", max_turns=1, new_character=None))
 
-        def init_state(self):
-            return state
+    assert tick_indexes == [0, 1]
+    assert state.characters["hero"].stats.gold == 100  # first attempt rolled back
+    assert run.saves == [0, 1]
+    assert (
+        "tick_failed",
+        {
+            "error": "UnexpectedModelBehavior",
+            "message": "Exceeded maximum retries (1)",
+            "consecutive": 1,
+        },
+    ) in run.events
+    assert "run_error" not in run.names()
 
-        def latest_snapshot_name(self):
-            return None
 
-        def save_state(self, world):
-            saves.append(world.time)
+@pytest.mark.parametrize(
+    "error",
+    [
+        ModelAPIError("ollama", "Connection error"),
+        UnexpectedModelBehavior("Tool exceeded max retries count of 3"),
+    ],
+)
+def test_game_gives_up_only_after_consecutive_failed_ticks(monkeypatch, error):
+    state = _state()
+    run = _Run(monkeypatch, state)
 
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
+    async def failing_turn(*_args):
+        raise error
 
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def fail_provider(*_args):
-        raise ModelAPIError("anthropic", "Connection error")
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
-    monkeypatch.setattr("src.engine.runtime.loop.tick", fail_provider)
-
-    succeeded = asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
+    monkeypatch.setattr("src.engine.runtime.loop.tick", failing_turn)
+    succeeded = asyncio.run(_run_game("demo", "hero", max_turns=50, new_character=None))
 
     assert succeeded is False
-    assert [event for event, _ in logged_events].count("run_error") == 1
-    assert dict(logged_events)["run_error"] == {
-        "error": "ModelAPIError",
-        "message": "Connection error",
-    }
-    assert saves == [0]
-    assert closed == [{"turns_completed": 0}]
+    assert run.names().count("tick_failed") == MAX_FAILED_TICKS
+    assert run.names().count("run_error") == 1
+    assert run.saves == [0]
+    assert run.closed == [{"turns_completed": 0}]
 
 
-def test_game_loop_records_retry_exhaustion_without_persisting_partial_turn(
-    monkeypatch,
-):
+def test_turn_without_character_action_is_a_failed_tick(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    saves: list[int] = []
-    closed: list[dict] = []
+    run = _Run(monkeypatch, state)
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        state_dir = None  # compaction is stubbed out
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
+    async def no_character_action(*_args):
+        return None
 
-        def __init__(self, **_kwargs):
-            pass
+    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", no_character_action)
+    asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
 
-        def init_state(self):
-            return state
-
-        def latest_snapshot_name(self):
-            return None
-
-        def save_state(self, world):
-            saves.append(world.time)
-
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def exhaust_retries(*_args):
-        raise UnexpectedModelBehavior("Tool exceeded max retries count of 3")
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
-    monkeypatch.setattr("src.engine.runtime.loop.tick", exhaust_retries)
-
-    succeeded = asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
-
-    assert succeeded is False
-    assert [event for event, _ in logged_events].count("run_error") == 1
-    assert dict(logged_events)["run_error"] == {
-        "error": "UnexpectedModelBehavior",
-        "message": "Tool exceeded max retries count of 3",
-    }
-    assert saves == [0]
-    assert closed == [{"turns_completed": 0}]
+    assert run.names().count("tick_failed") == MAX_FAILED_TICKS
+    assert run.saves == [0]
 
 
 def test_game_loop_logs_and_reraises_unexpected_post_turn_failure(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    saves: list[int] = []
-    closed: list[dict] = []
-
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        state_dir = None  # compaction is stubbed out
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
-
-        def __init__(self, **_kwargs):
-            pass
-
-        def init_state(self):
-            return state
-
-        def latest_snapshot_name(self):
-            return None
-
-        def save_state(self, world):
-            saves.append(world.time)
-
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
+    run = _Run(monkeypatch, state)
 
     async def complete_turn(*_args):
         return True
@@ -2481,78 +2354,61 @@ def test_game_loop_logs_and_reraises_unexpected_post_turn_failure(monkeypatch):
     async def fail_compaction(*_args):
         raise RuntimeError("chronicle storage unavailable")
 
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.tick", complete_turn)
     monkeypatch.setattr("src.engine.runtime.loop.compact_history", fail_compaction)
 
     with pytest.raises(RuntimeError, match="chronicle storage unavailable"):
         asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
 
-    assert [event for event, _ in logged_events].count("run_error") == 1
-    assert dict(logged_events)["run_error"] == {
+    assert run.names().count("run_error") == 1
+    assert dict(run.events)["run_error"] == {
         "error": "RuntimeError",
         "message": "chronicle storage unavailable",
     }
-    assert saves == [0]
-    assert closed == [{"turns_completed": 0}]
+    assert run.saves == [0]
+    assert run.closed == [{"turns_completed": 0}]
 
 
-def test_game_loop_does_not_persist_turn_without_character_action(monkeypatch):
+def test_dm_quest_claim_vetoed_by_a_guard_is_logged(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    saves: list[int] = []
-    closed: list[dict] = []
+    logger = Mock()
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        state_dir = None  # compaction is stubbed out
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
+    async def resolve_wait(_intent, world, **_kwargs):
+        world.history.append(_event("hero waits."))
+        return "hero waits."
 
-        def __init__(self, **_kwargs):
-            pass
+    async def claim_progress(*_args):
+        return DMResult(
+            creates=[],
+            modifies=[
+                Modify(
+                    action="update_quest", target_id="q1", advance=True, step="scouted"
+                )
+            ],
+            minutes=[5],
+        )
 
-        def init_state(self):
-            return state
+    async def wait_turn(*_args):
+        return Wait(actor="hero")
 
-        def latest_snapshot_name(self):
-            return None
+    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", wait_turn)
+    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_wait)
+    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", claim_progress)
 
-        def save_state(self, world):
-            saves.append(world.time)
+    asyncio.run(tick("hero", state, 0, logger))
 
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def no_character_action(*_args):
-        return None
-
-    async def unexpected_compaction(*_args):
-        raise AssertionError("an incomplete turn must not reach compaction")
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", no_character_action)
-    monkeypatch.setattr(
-        "src.engine.runtime.loop.compact_history", unexpected_compaction
+    assert state.quests["q1"].current_step == 0
+    logger.log_event.assert_any_call(
+        "quest_advance_vetoed",
+        guard="tool_cannot_advance",
+        quest="q1",
+        objective="scout",
+        claim="scouted",
+        status=None,
+        actor="hero",
+        tool="wait",
+        events=["hero waits."],
     )
-
-    asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
-
-    assert ("run_stopped", {"reason": "no_character_action"}) in logged_events
-    assert saves == [0]
-    assert closed == [{"turns_completed": 0}]
 
 
 # ============ ESCALATION COUNTER ============

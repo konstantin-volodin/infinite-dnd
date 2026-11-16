@@ -1,0 +1,48 @@
+## 🦸 the hero (arc #{{ arc_number }})
+- **{{ hero.id }}**{% if hero.role %} ({{ hero.role }}){% endif %} at {{ hero.location }}, {{ hero.stats.hp }}/{{ hero.stats.max_hp }} HP
+- backstory: {{ hero.backstory or 'unknown' }}
+{% if hero.knowledge %}
+- knows:
+{% for fact in hero.knowledge[-5:] %}
+  - {{ fact }}
+{% endfor %}
+{% endif %}
+{% if chronicle %}
+
+## 📖 chronicle (oldest first)
+{% for entry in chronicle %}
+- {{ entry }}
+{% endfor %}
+{% endif %}
+
+## 📜 how recent quests ended
+{% for q in ended %}
+- **{{ q.title }}** — {{ q.status }}. {{ q.description }}{% if q.steps %} last steps: {{ q.steps[-3:] | join(' → ') }}{% endif %}
+
+{% else %}
+- none yet
+{% endfor %}
+
+## 👥 people the hero knows
+{% for c in people %}
+- **{{ c.id }}**{% if c.role %} ({{ c.role }}){% endif %} at {{ c.location }}; wants: {{ c.goal or 'nothing stated' }}{% if hero.relationships.get(c.id) %}; hero sees them as: {{ hero.relationships[c.id] }}{% endif %}{% if c.relationships.get(hero.id) %}; sees the hero as: {{ c.relationships[hero.id] }}{% endif %}
+
+{% else %}
+- no one
+{% endfor %}
+
+## 💭 recent events
+{% for event in recent_events %}
+- {{ event }}
+{% else %}
+- none
+{% endfor %}
+
+## 🚪 gateways (known places the new region may connect to)
+{% for gateway in gateways %}
+- {{ gateway }}
+{% endfor %}
+
+---
+
+Call `report` with the next arc.

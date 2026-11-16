@@ -1,4 +1,4 @@
-"""Unified infinite-dnd browser app: World, Story and Logs as tabs under one shell."""
+"""Unified infinite-dnd browser app: World and Logs as tabs under one shell."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 from src.interface.assets import read_asset, static_asset
 from src.engine.state import WorldState
 from src.interface.session_log import DEFAULT_LOG_DIR, list_logs, load_session
-from src.interface.story import list_chapters, load_chapter, load_tail
 from src.interface.web_player import PlayBroker
 from src.interface.world_state import (
     DEFAULT_STATE_DIR,
@@ -25,20 +24,19 @@ from src.interface.world_state import (
 
 WORLD_HTML = read_asset("templates/world.html")
 LOGS_HTML = read_asset("templates/logs.html")
-STORY_HTML = read_asset("templates/story.html")
 
 
 def _with_nav(html: str, active: str) -> str:
-    links = "".join(
-        f'<a href="{href}" class="{"active" if key == active else ""}"'
-        f"{' aria-current="page"' if key == active else ''}>{label}</a>"
-        for key, href, label in (
-            ("world", "/", "World"),
-            ("story", "/story", "Story"),
-            ("logs", "/logs", "Logs"),
-        )
+    world_current = ' aria-current="page"' if active == "world" else ""
+    logs_current = ' aria-current="page"' if active == "logs" else ""
+    tabs = (
+        '<nav class="tabs" aria-label="Primary">'
+        f'<a href="/" class="{"active" if active == "world" else ""}"'
+        f"{world_current}>World</a>"
+        f'<a href="/logs" class="{"active" if active == "logs" else ""}"'
+        f"{logs_current}>Logs</a>"
+        "</nav>"
     )
-    tabs = f'<nav class="tabs" aria-label="Primary">{links}</nav>'
     html = html.replace(
         '<div class="topbar-main">', f'<div class="topbar-main">{tabs}', 1
     )
@@ -66,8 +64,6 @@ def _build_handler(
             parsed = urlparse(self.path)
             if parsed.path == "/":
                 self._send_html(_with_nav(WORLD_HTML, "world"))
-            elif parsed.path == "/story":
-                self._send_html(_with_nav(STORY_HTML, "story"))
             elif parsed.path == "/logs":
                 self._send_html(_with_nav(LOGS_HTML, "logs"))
             elif parsed.path.startswith("/static/"):
@@ -107,8 +103,6 @@ def _build_handler(
                     self._send_json(load_series(state_dir, scenario, run_id))
                 except FileNotFoundError as exc:
                     self._send_json({"error": str(exc)}, HTTPStatus.NOT_FOUND)
-            elif parsed.path.startswith("/api/story/"):
-                self._send_story(parsed.path.removeprefix("/api/story/"))
             elif parsed.path.startswith("/api/logs/"):
                 name = unquote(parsed.path.removeprefix("/api/logs/"))
                 path = next(
@@ -174,26 +168,6 @@ def _build_handler(
             if not isinstance(payload, dict):
                 raise ValueError("JSON body must be an object.")
             return payload
-
-        def _send_story(self, remainder: str) -> None:
-            """/api/story/<scenario>/<run>[/tail | /<chapter number>]"""
-            scenario, _, rest = unquote(remainder).partition("/")
-            run_id, _, part = rest.partition("/")
-            try:
-                self._require_run(scenario, run_id)
-                if not part:
-                    payload = {"chapters": list_chapters(state_dir, scenario, run_id)}
-                elif part == "tail":
-                    payload = load_tail(state_dir, scenario, run_id)
-                elif part.isascii() and part.isdigit():
-                    payload = load_chapter(state_dir, scenario, run_id, int(part))
-                else:
-                    raise FileNotFoundError(f"Not found: {part}")
-                self._send_json(payload)
-            except FileNotFoundError as exc:
-                self._send_json({"error": str(exc)}, HTTPStatus.NOT_FOUND)
-            except ValueError as exc:
-                self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
         def _parse_run_path(self, path: str, prefix: str) -> tuple[str, str] | None:
             remainder = unquote(path.removeprefix(prefix))
@@ -262,7 +236,7 @@ def _pick_port(host: str, preferred: int) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Launch the infinite-dnd app (World, Story, Logs tabs)."
+        description="Launch the infinite-dnd app (World + Logs tabs)."
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)

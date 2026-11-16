@@ -237,6 +237,7 @@ class WorldOps(_OpsBase):
             )
             quest.steps.append(note)
             quest.current_step += 1
+            quest.last_progress = self.state.time
             awarded_step = True
             if (
                 quest.plan
@@ -311,6 +312,7 @@ class WorldOps(_OpsBase):
             description=description,
             owner=owner_id,
             plan=plan or [],
+            last_progress=self.state.time,
         )
         owner_loc = (
             self.state.characters[owner_id].location
