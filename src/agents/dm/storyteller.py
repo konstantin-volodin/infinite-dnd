@@ -175,7 +175,7 @@ def storyteller_context(state: WorldState) -> str:
         "dm/storyteller_state.jinja",
         hero=hero,
         arc_number=len(ended) + 1,
-        chronicle=state.chronicle[-3:],
+        chronicle=state.chronicle,
         recent_events=[e.text for e in state.history[-12:]],
         ended=ended,
         people=people,

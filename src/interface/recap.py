@@ -1,12 +1,14 @@
-"""Story recap: turn a finished run's saved WorldState into readable markdown.
+"""Book export: a run's prose chapters plus the not-yet-archived tail as one markdown book.
 
-Deterministic — no LLM calls. The narrative already lives in the saved state:
-chronicle (compacted eras), history (recent events), quests, and characters.
+Deterministic — no LLM calls. Chapters live in <run_dir>/chapters/ (written by
+compaction); each is followed by a collapsible log of the raw events it was written
+from. Events not yet archived, quests, and the cast close the book.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from src.engine.rules import get_health_status
@@ -19,50 +21,59 @@ from src.interface.world_state import (
 )
 
 
-def build_recap(state: WorldState, *, title: str, scenario: str, run_id: str) -> str:
-    """Render a finished run's WorldState as a markdown recap."""
-    sections = [
-        f"# {title} — Recap\n\n*{scenario} · {run_id}*",
-        _previously(state.chronicle),
-        _story_so_far(state.history),
-        _quest_outcomes(state.quests),
-        _epilogue(state.characters),
-    ]
+def load_chapters(run_dir: Path) -> list[dict]:
+    """Every archived chapter of a run, in order."""
+    paths = sorted(Path(run_dir).glob("chapters/chapter_*.json"))
+    return [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+
+
+def build_recap(
+    state: WorldState,
+    *,
+    title: str,
+    scenario: str,
+    run_id: str,
+    chapters: list[dict] | None = None,
+) -> str:
+    """Render a run's chapters and latest WorldState as a markdown book."""
+    chapters = chapters or []
+    sections = [f"# {title}\n\n*{scenario} · {run_id}*"]
+    if not chapters and state.chronicle:  # runs saved before chapters existed
+        sections.append("## Previously…\n\n" + "\n\n".join(state.chronicle))
+    clock = 0
+    for chapter in chapters:
+        events = [HistoryEvent.model_validate(e) for e in chapter["events"]]
+        sections.append(
+            f"## Chapter {chapter['number']}: {chapter['title']}\n\n{chapter['prose']}\n\n"
+            f"<details><summary>What happened ({len(events)} events)</summary>\n\n"
+            f"{_event_log(events, clock)}\n\n</details>"
+        )
+        clock += sum(e.minutes_elapsed for e in events)
+    if state.history:
+        tail_start = state.minutes_elapsed - sum(
+            e.minutes_elapsed for e in state.history
+        )
+        sections.append(
+            "## Since the last chapter\n\n" + _event_log(state.history, tail_start)
+        )
+    sections += [_quest_outcomes(state.quests), _epilogue(state.characters)]
     return "\n\n".join(section for section in sections if section) + "\n"
 
 
-def _previously(chronicle: list[str]) -> str:
-    if not chronicle:
-        return ""
-    return "## Previously…\n\n" + "\n\n".join(chronicle)
-
-
-def _story_so_far(history: list[HistoryEvent]) -> str:
-    """Group events into sections, starting a new one whenever the clock or location shifts."""
-    if not history:
-        return ""
-    blocks = ["## The Story So Far"]
-    elapsed = 0
-    group_key: tuple[str, str] | None = None
-    paragraph: list[str] = []
-
-    def flush() -> None:
-        if paragraph:
-            blocks.append(" ".join(paragraph))
-            paragraph.clear()
-
-    for event in history:
-        elapsed += event.minutes_elapsed
+def _event_log(events: list[HistoryEvent], start_minutes: int) -> str:
+    """Events as a list, with a clock-and-place line whenever the place or day changes."""
+    lines: list[str] = []
+    elapsed, group_key = start_minutes, None
+    for event in events:
         clock = format_clock(elapsed)
         key = (clock.split(" · ")[0], event.location)
         if key != group_key:
-            flush()
             group_key = key
             header = f"{clock} · {event.location}" if event.location else clock
-            blocks.append(f"### {header}")
-        paragraph.append(event.text)
-    flush()
-    return "\n\n".join(blocks)
+            lines.append(f"\n**{header}**\n" if lines else f"**{header}**\n")
+        lines.append(f"- {event.text}")
+        elapsed += event.minutes_elapsed
+    return "\n".join(lines)
 
 
 def _quest_outcomes(quests: dict[str, Quest]) -> str:
@@ -96,9 +107,7 @@ def _epilogue(characters: dict[str, Character]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Export a markdown recap of a finished run."
-    )
+    parser = argparse.ArgumentParser(description="Export a run as a markdown book.")
     parser.add_argument(
         "--state-dir",
         type=Path,
@@ -129,7 +138,13 @@ def main(argv: list[str] | None = None) -> int:
     scenario, run_id = runs[0]["scenario"], runs[0]["run_id"]
     view = load_view(args.state_dir, scenario, run_id)
     state = WorldState.model_validate(view["state"])
-    markdown = build_recap(state, title=view["title"], scenario=scenario, run_id=run_id)
+    markdown = build_recap(
+        state,
+        title=view["title"],
+        scenario=scenario,
+        run_id=run_id,
+        chapters=load_chapters(Path(args.state_dir) / scenario / run_id),
+    )
 
     out_path = args.out or (
         Path(args.state_dir) / scenario / run_id / f"{run_id}_recap.md"

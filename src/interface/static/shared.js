@@ -12,3 +12,7 @@
       if (!response.ok) throw new Error(`Request failed: ${response.status}`);
       return response.json();
     }
+
+    function runKey(scenario, runId) {
+      return `${scenario}/${runId}`;
+    }

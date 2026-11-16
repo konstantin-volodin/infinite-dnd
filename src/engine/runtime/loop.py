@@ -1421,7 +1421,7 @@ async def _run_game(
                 pre_minutes, state.minutes_elapsed
             )
             await compact_history(
-                state, logger, replay
+                state, logger, replay, manager.state_dir, state.protagonist
             )  # between ticks only — never mid-tick
             logger.log_event("world_snapshot", **_snapshot(state))
             state.time += 1

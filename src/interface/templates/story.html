@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Infinite DnD Story</title>
+  <link rel="stylesheet" href="/static/world.css">
+  <link rel="stylesheet" href="/static/story.css">
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand"><span class="brand-mark"></span>infinite-dnd</div>
+      <div class="topbar-main">
+        <label class="sr-only" for="run">Game run</label>
+        <select id="run" aria-label="Game run"></select>
+        <div class="session-meta"><div class="title" id="meta-title">Waiting for a run</div></div>
+      </div>
+    </div>
+
+    <div class="reader-grid">
+      <details class="chapters" id="chapters-box" open>
+        <summary>Chapters <span class="count" id="chapter-count">0</span></summary>
+        <ol id="chapter-list"></ol>
+      </details>
+
+      <main class="reader" id="reader" aria-live="polite"></main>
+    </div>
+  </div>
+
+  <script src="/static/shared.js"></script>
+  <script src="/static/story.js"></script>
+</body>
+</html>

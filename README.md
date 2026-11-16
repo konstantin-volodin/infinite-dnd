@@ -37,10 +37,10 @@ Ollama's 4k default truncates the prompts.
 - `infinite-dnd --replay run.jsonl` - replays a recorded run without an LLM provider
 - `infinite-dnd-state` - runs the app (World + Logs tabs)
 - `infinite-dnd-scorecard` - compares campaign runs
-- `infinite-dnd-recap` - exports a run's saved state as a markdown story recap
+- `infinite-dnd-recap` - exports a run as one markdown book: the prose chapters, each with the raw events it was written from, then the not-yet-archived events
 - `infinite-dnd-dump-context` - dumps each agent's exact prompt/tools/context for inspection
 
-Run these commands from the same working directory: saved campaigns live under `world-state/` and session logs under `logs/` there. The dashboard reads those directories by default. Use `uv run` before each command when using the project environment.
+Run these commands from the same working directory: saved campaigns live under `world-state/` (with each run's prose chapters in `world-state/<scenario>/<run_id>/chapters/`) and session logs under `logs/` there. The dashboard reads those directories by default. Use `uv run` before each command when using the project environment.
 
 ### 🌐 Deploy
 Runs on a home server via `docker-compose.yml` + `Caddyfile`, behind a `.env` with
@@ -69,7 +69,7 @@ src/                        - source code
 ├── agents/                 - LLM agent implementations
 │   ├── action_resolver/        - sole writer; resolves intents against state
 │   ├── character/              - PC/NPC turn: emits a CharacterTool
-│   └── dm/                     - directing, narration, quest progress, and chronicle compaction
+│   └── dm/                     - directing, narration, quest progress, and chapter writing
 ├── engine/                 - game engine components
 │   ├── rules.py                - game rules and derived stats
 │   ├── state/                  - world models and state persistence

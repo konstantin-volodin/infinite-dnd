@@ -2139,6 +2139,7 @@ class _Run:
         class Manager:
             run_id = "test-run"
             scenario = "demo"
+            state_dir = None  # compaction is stubbed out
             manifest = {"pc": "hero", "title": "Test Quest", "hook": "Go."}
 
             def __init__(self, **_kwargs):
