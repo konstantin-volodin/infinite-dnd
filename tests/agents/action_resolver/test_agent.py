@@ -8,7 +8,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.usage import RunUsage
 from src.agents.utils import create_model
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
 from src.agents.character.tools import Action
@@ -2219,3 +2219,40 @@ def test_deterministic_dispatch_normalizes_travel_location_id():
 
     assert "hero moved to 'forest'" in result
     assert state.characters["hero"].location == "forest"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The genealogy marks the cellar.",
+        'done("The genealogy marks the cellar.")',
+    ],
+)
+def test_free_form_action_accepts_a_plain_text_summary(text):
+    # Seen live on the local Qwen: the summary arrives as text, not a `done` call.
+    state = _state()
+
+    def model(_messages, _info):
+        return ModelResponse(parts=[TextPart(content=text)])
+
+    with agent.override(model=FunctionModel(model)):
+        result = asyncio.run(
+            resolve(Action(actor="hero", description="read the genealogy"), state)
+        )
+
+    assert result == "The genealogy marks the cellar."
+    assert state.history[-1].text == result
+
+
+def test_free_form_action_falls_back_when_output_validation_is_exhausted():
+    state = _state()
+
+    def model(_messages, _info):
+        return ModelResponse(parts=[ToolCallPart("done", {"wrong": 1})])
+
+    with agent.override(model=FunctionModel(model)):
+        result = asyncio.run(
+            resolve(Action(actor="hero", description="read the genealogy"), state)
+        )
+
+    assert result == "hero makes no further progress on that action."

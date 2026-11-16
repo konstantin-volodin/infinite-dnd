@@ -17,6 +17,10 @@ from src.engine.state.models import (
 from src.world import pick_scenario, read_manifest, scenario_dir
 
 _SNAPSHOT_PATTERN = re.compile(r"world_state_(\d+)\.json")
+# Retention: every snapshot of the last SNAPSHOT_KEEP_RECENT ticks, then one per
+# SNAPSHOT_MILESTONE_EVERY ticks (tick 0 included) for the dashboard's long view.
+SNAPSHOT_KEEP_RECENT = 20
+SNAPSHOT_MILESTONE_EVERY = 100
 
 
 def _snapshots(directory: Path):
@@ -158,3 +162,10 @@ class StateManager:
         finally:
             if temp_path is not None:
                 temp_path.unlink(missing_ok=True)
+        self._prune_snapshots(state.time)
+
+    def _prune_snapshots(self, latest: int) -> None:
+        """Keep the recent window plus sparse milestones so an endless run stays small."""
+        for num, _, name in list(_snapshots(self.state_dir)):
+            if num < latest - SNAPSHOT_KEEP_RECENT and num % SNAPSHOT_MILESTONE_EVERY:
+                (self.state_dir / name).unlink(missing_ok=True)

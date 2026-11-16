@@ -316,3 +316,17 @@ def test_director_fields_survive_save_load_round_trip(tmp_path):
     loaded = manager.load_state(world_state_file="world_state_3.json")
     assert loaded.last_quest_advance_time == 2
     assert loaded.director_interventions == {"expose-the-smugglers": 1, "world": 2}
+
+
+def test_snapshots_keep_a_recent_window_and_sparse_milestones(tmp_path):
+    manager = StateManager(scenario="smuggler-cove", state_dir=str(tmp_path))
+    state = manager.init_state()
+    for tick in range(231):
+        state.time = tick
+        manager.save_state(state)
+
+    kept = sorted(
+        int(path.stem.split("_")[-1]) for path in manager.state_dir.glob("*.json")
+    )
+    assert kept == [0, 100, 200, *range(210, 231)]
+    assert manager.latest_snapshot_name() == "world_state_230.json"

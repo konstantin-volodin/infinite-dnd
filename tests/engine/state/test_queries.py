@@ -4,6 +4,8 @@ from src.engine.state.models import Character, Location, WorldState
 from src.engine.state.queries import (
     characters_in_location,
     connected_location_ids,
+    live_factions,
+    nearby_location_ids,
     resolve_character,
     resolve_location_id,
     slugify,
@@ -114,3 +116,49 @@ def test_connected_location_ids(state):
     assert connected_location_ids(state, "tavern") == ["forest"]
     assert connected_location_ids(state, "forest") == ["tavern"]
     assert connected_location_ids(state, "nowhere") == []
+
+
+def test_nearby_location_ids_walks_a_bounded_number_of_hops():
+    chain = ["a", "b", "c", "d"]
+    state = WorldState(
+        locations={
+            lid: Location(
+                id=lid,
+                connections=[n for n in chain if abs(chain.index(n) - i) == 1],
+            )
+            for i, lid in enumerate(chain)
+        }
+    )
+
+    assert nearby_location_ids(state, ["a"]) == ["a", "b", "c"]
+    assert nearby_location_ids(state, ["a", "d"], hops=1) == ["a", "d", "b", "c"]
+    assert nearby_location_ids(state, ["nowhere"]) == []
+
+
+def test_live_factions_hide_finished_and_orphaned_agendas():
+    from src.engine.state.models import Faction, ProgressClock, Quest
+
+    def faction(fid, **clock):
+        return Faction(
+            id=fid,
+            name=fid,
+            goal="win",
+            clocks=[
+                ProgressClock(id="c", name="c", consequence="x", segments=2, **clock)
+            ],
+        )
+
+    state = WorldState(
+        quests={
+            "open": Quest(id="open", title="Open"),
+            "done": Quest(id="done", title="Done", status="completed"),
+        },
+        factions={
+            "live": faction("live", fail_quest_id="open"),
+            "fired": faction("fired", progress=2, consequence_triggered=True),
+            "orphan": faction("orphan", fail_quest_id="done"),
+            "free": faction("free"),
+        },
+    )
+
+    assert [f.id for f in live_factions(state)] == ["free", "live"]

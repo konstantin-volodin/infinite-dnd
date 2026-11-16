@@ -4,6 +4,7 @@ from src.engine.state import (
     Character,
     WorldState,
     connected_location_ids,
+    nearby_location_ids,
     resolve_character,
     resolve_location_id,
     slugify,
@@ -52,8 +53,19 @@ def action_resolver_context(
         for other in state.characters.values()
         if other.location == char.location and other.id != char.id
     ]
+    # Bounded as the world grows: people nearby, people the actor knows, and
+    # anyone the action names.
+    nearby = set(nearby_location_ids(state, [char.location]))
+    named = f"-{slugify(f'{description} {target or ""}')}-"
     known_characters = [
-        other for other in state.characters.values() if other.id != char.id
+        other
+        for other in state.characters.values()
+        if other.id != char.id
+        and (
+            other.location in nearby
+            or other.id in char.relationships
+            or f"-{other.id}-" in named
+        )
     ]
     quests = [
         quest

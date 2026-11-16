@@ -17,11 +17,14 @@ from pydantic import TypeAdapter
 from src.agents.character.tools import CharacterTool
 from src.agents.dm.agent import DMResult
 from src.agents.dm.director import DirectorResult
+from src.agents.dm.storyteller import Arc
 from src.agents.dm.tools import Create, Modify
 from src.engine.state import WorldState
 
 
-ReplayKind = Literal["character", "action_resolution", "dm", "director", "chronicle"]
+ReplayKind = Literal[
+    "character", "action_resolution", "dm", "director", "chronicle", "arc", "skip"
+]
 _CHARACTER_ADAPTER = TypeAdapter(CharacterTool)
 
 
@@ -187,6 +190,37 @@ class ReplayTape:
             quest_id=payload.get("quest_id"),
         )
 
+    def arc(self, output: Arc | None = None) -> Arc | None:
+        payload = self._exchange(
+            "arc", "arc", None if output is None else output.model_dump(mode="json")
+        )
+        return None if payload is None else Arc.model_validate(payload)
+
+    def mark(self) -> int:
+        """Tape position at the start of a tick, for :meth:`skip`."""
+        return self.path.stat().st_size if self.mode == "record" else self._position
+
+    def truncate(self, mark: int) -> None:
+        """Drop outputs recorded after `mark` (a tick that never completed)."""
+        if self.mode == "record":
+            with self.path.open("r+", encoding="utf-8") as stream:
+                stream.truncate(mark)
+
+    def skip(self, mark: int) -> None:
+        """Record a skipped tick in place of the outputs it produced before failing."""
+        if self.mode == "record":
+            self.truncate(mark)
+            self._exchange("skip", "tick", None)
+
+    def skipped(self) -> bool:
+        """During playback, consume a recorded skipped tick if one is next."""
+        if not self.is_playback or self._position >= len(self._entries):
+            return False
+        if self._entries[self._position].kind != "skip":
+            return False
+        self._position += 1
+        return True
+
     def assert_consumed(self) -> None:
         if self.is_playback and self.remaining:
             raise ReplayError(
@@ -239,6 +273,8 @@ class ReplayTape:
                     "dm",
                     "director",
                     "chronicle",
+                    "arc",
+                    "skip",
                 }:
                     raise ValueError(f"unknown kind {kind!r}")
                 entries.append(

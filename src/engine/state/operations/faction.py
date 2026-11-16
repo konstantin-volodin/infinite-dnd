@@ -1,5 +1,6 @@
 """Deterministic faction-agenda and progress-clock operations."""
 
+from src.engine.state.models import Faction, ProgressClock
 from src.engine.state.operations._base import _OpsBase
 from src.engine.state.queries import slugify
 
@@ -8,6 +9,42 @@ _TERMINAL_QUEST_STATUSES = {"completed", "failed"}
 
 
 class FactionOps(_OpsBase):
+    def add_faction(
+        self,
+        faction_id: str,
+        name: str,
+        goal: str,
+        consequence: str,
+        segments: int,
+        fail_quest_id: str | None = None,
+    ) -> str:
+        """Add an off-screen faction with one clock that fails a quest when it fills."""
+        if not slugify(faction_id):
+            return "Cannot add faction — faction ID must contain a letter or number."
+        if any(
+            slugify(existing) == slugify(faction_id) for existing in self.state.factions
+        ):
+            return f"Cannot add faction — '{faction_id}' already exists."
+        if fail_quest_id and fail_quest_id not in self.state.quests:
+            return f"Cannot add faction — quest '{fail_quest_id}' not found."
+        if not consequence.strip() or segments < 1:
+            return "Cannot add faction — its clock needs a consequence and segments."
+        self.state.factions[faction_id] = Faction(
+            id=faction_id,
+            name=name,
+            goal=goal,
+            clocks=[
+                ProgressClock(
+                    id=f"{faction_id}-plan",
+                    name=goal,
+                    consequence=consequence,
+                    segments=segments,
+                    fail_quest_id=fail_quest_id,
+                )
+            ],
+        )
+        return f"Faction '{faction_id}' added."
+
     def advance_faction_clock(
         self, faction_id: str, clock_id: str, amount: int = 1
     ) -> str:

@@ -36,12 +36,23 @@ from src.agents.action_resolver.agent import resolve
 from src.agents.server import read_metrics
 from src.interface.session_log import Logger
 from src.interface.world_state import format_clock
+from .campaign import campaign_upkeep, succeed_if_dead
 from .chronicle import compact_history
 from .replay import ReplayTape
 
 
 _AGENT_USAGE = UsageLimits(request_limit=12)
 _DM_USAGE = UsageLimits(request_limit=16)
+
+# A failed tick (agent error, no character action) is rolled back and retried;
+# the campaign only gives up after this many in a row, backing off between them.
+MAX_FAILED_TICKS = 5
+FAILED_TICK_BACKOFF_S = 10
+
+
+class _SkippedTick(Exception):
+    """A tick that produced nothing and is rolled back like a failed one."""
+
 
 # Locations must resolve before NPCs/items that anchor to them. Quests last (anchor to PCs).
 _CREATE_ORDER = {"location": 0, "npc": 1, "item": 2, "quest": 3}
@@ -472,13 +483,25 @@ def _can_advance_final_objective(
     events: list[HistoryEvent] | None = None,
     claimed_resolution: str | None = None,
 ) -> bool:
-    """Require owner-attributed evidence that the final planned objective happened."""
+    return _final_objective_veto(quest, tool, events, claimed_resolution) is None
+
+
+def _final_objective_veto(
+    quest,
+    tool: CharacterTool,
+    events: list[HistoryEvent] | None = None,
+    claimed_resolution: str | None = None,
+) -> str | None:
+    """Require owner-attributed evidence that the final planned objective happened.
+
+    Returns the name of the guard that vetoed the advance, or None to allow it.
+    """
     if not quest.plan or quest.current_step != len(quest.plan) - 1:
-        return True
-    if tool.actor != quest.owner or not isinstance(
-        tool, (Action, Attack, Check, Speak)
-    ):
-        return False
+        return None
+    if tool.actor != quest.owner:
+        return "final_not_owner"
+    if not isinstance(tool, (Action, Attack, Check, Speak)):
+        return "final_tool_cannot_advance"
 
     objective_verb = quest.plan[quest.current_step].split(maxsplit=1)[0].casefold()
     verb_forms = _FINAL_OBJECTIVE_VERB_FORMS.get(objective_verb, {objective_verb})
@@ -537,7 +560,7 @@ def _can_advance_final_objective(
                 )
             )
         ):
-            return True
+            return None
 
     # Speech is durably recorded as ``owner says to target``, not as the
     # resolution verb used by objectives such as "confront" or "report".
@@ -546,7 +569,7 @@ def _can_advance_final_objective(
     # and the addressed character. This keeps unrelated dialogue from closing
     # a quest while allowing real speech events to satisfy speech objectives.
     if not isinstance(tool, Speak) or not tool.target or not claimed_resolution:
-        return False
+        return "final_no_resolution_event"
     direct_speech = any(
         event.characters[:1] == [quest.owner]
         and tool.target in event.characters[1:]
@@ -554,7 +577,7 @@ def _can_advance_final_objective(
         for event in events or []
     )
     if not direct_speech:
-        return False
+        return "final_no_resolution_event"
 
     claim = claimed_resolution.casefold()
     claim_words = set(re.findall(r"[a-z]+", claim))
@@ -565,11 +588,11 @@ def _can_advance_final_objective(
     if not claim_pattern.match(claim) or _FINAL_OBJECTIVE_DISCOVERY_PATTERN.search(
         claim
     ):
-        return False
+        return "final_claim_not_resolution"
     if alternative_verbs and not any(
         _FINAL_OBJECTIVE_VERB_FORMS[verb] & claim_words for verb in alternative_verbs
     ):
-        return False
+        return "final_claim_not_resolution"
 
     target_id_words = set(re.findall(r"[a-z]+", tool.target.casefold()))
     message_words = set(re.findall(r"[a-z]+", tool.message.casefold()))
@@ -581,13 +604,14 @@ def _can_advance_final_objective(
         - _FINAL_OBJECTIVE_STOP_WORDS
     )
     if not message_words & claim_details:
-        return False
+        return "final_claim_not_in_message"
     objective_anchor = target_words & claim_words
-    return target_words <= claim_words or bool(
+    on_target = target_words <= claim_words or bool(
         objective_anchor
         and target_id_words
         and _claim_mentions_target(claim, tool.target)
     )
+    return None if on_target else "final_claim_off_target"
 
 
 def _word_roots(text: str) -> set[str]:
@@ -740,13 +764,30 @@ def _can_advance_objective(
     events: list[HistoryEvent],
     claimed_resolution: str | None = None,
 ) -> bool:
-    """Require an owner-controlled attempt grounded in the current objective."""
-    if quest.plan and quest.current_step == len(quest.plan) - 1:
-        return _can_advance_final_objective(quest, tool, events, claimed_resolution)
+    return _objective_veto(state, quest, tool, events, claimed_resolution) is None
+
+
+def _objective_veto(
+    state: WorldState,
+    quest: Quest,
+    tool: CharacterTool,
+    events: list[HistoryEvent],
+    claimed_resolution: str | None = None,
+) -> str | None:
+    """Require an owner-controlled attempt grounded in the current objective.
+
+    Returns the name of the guard that vetoed the advance, or None to allow it.
+    """
+    if not quest.plan:
+        return None  # nothing to ground against (and nothing to index)
+    if quest.current_step == len(quest.plan) - 1:
+        return _final_objective_veto(quest, tool, events, claimed_resolution)
     if _is_grounded_dialogue_reply(state, quest, tool, events):
-        return True
-    if tool.actor != quest.owner or not isinstance(tool, _OBJECTIVE_ATTEMPT_TYPES):
-        return False
+        return None
+    if tool.actor != quest.owner:
+        return "not_owner"
+    if not isinstance(tool, _OBJECTIVE_ATTEMPT_TYPES):
+        return "tool_cannot_advance"
 
     objective = quest.plan[quest.current_step].casefold()
     if _DIALOGUE_OBJECTIVE_PATTERN.match(objective) and not (
@@ -754,17 +795,19 @@ def _can_advance_objective(
         or isinstance(tool, (Action, Check))
         and _DIALOGUE_ATTEMPT_PATTERN.match(tool.description.casefold())
     ):
-        return False
+        return "dialogue_objective_needs_dialogue"
     if _DIALOGUE_OBJECTIVE_PATTERN.match(
         objective
     ) and not _dialogue_attempt_mentions_quest_topic(quest, tool):
-        return False
+        return "dialogue_off_topic"
 
     owner_events = [event for event in events if quest.owner in event.characters]
-    if not owner_events or any(
+    if not owner_events:
+        return "no_owner_event"
+    if any(
         _FAILED_ATTEMPT_PATTERN.search(event.text.casefold()) for event in owner_events
     ):
-        return False
+        return "failed_attempt_wording"
 
     objective_locations = _named_objective_locations(
         state, quest.plan[quest.current_step]
@@ -772,7 +815,7 @@ def _can_advance_objective(
     if objective_locations and not any(
         slugify(event.location) in objective_locations for event in owner_events
     ):
-        return False
+        return "wrong_location"
 
     actor = state.characters.get(quest.owner)
     attempt_parts = [actor.location if actor else ""]
@@ -811,11 +854,12 @@ def _can_advance_objective(
         - {"s"}
     )
     required_matches = min(2, len(anchors))
-    return (
+    grounded = (
         not anchors
         or len(anchors & evidence_words) >= required_matches
         or _is_grounded_referential_contact(state, quest, tool, owner_events)
     )
+    return None if grounded else "objective_words_missing"
 
 
 def _advance_grounded_objective(
@@ -927,37 +971,6 @@ def _record_resolution_if_needed(
     return state.history[history_size:]
 
 
-def _campaign_outcome(state: WorldState, pc_id: str) -> str | None:
-    """Return a terminal outcome once every quest owned by the PC is resolved."""
-    quests = [quest for quest in state.quests.values() if quest.owner == pc_id]
-    if not quests or any(
-        quest.status.lower() not in {"completed", "failed"} for quest in quests
-    ):
-        return None
-    return (
-        "failed"
-        if any(quest.status.lower() == "failed" for quest in quests)
-        else "completed"
-    )
-
-
-def _announce_campaign_outcome(
-    state: WorldState, pc_id: str, logger: Logger, outcome: str
-) -> None:
-    quests = [quest.id for quest in state.quests.values() if quest.owner == pc_id]
-    if outcome == "completed":
-        print(f"\n=== {pc_id}'s quests are complete. The campaign ends in victory. ===")
-        logger.log_event("campaign_completed", pc=pc_id, quests=quests)
-    else:
-        print(f"\n=== {pc_id}'s quests have failed. The campaign ends in defeat. ===")
-        logger.log_event("campaign_failed", pc=pc_id, quests=quests)
-
-
-def _announce_pc_death(pc_id: str, logger: Logger) -> None:
-    print(f"\n=== {pc_id} has died. The campaign ends. ===")
-    logger.log_event("pc_death", pc=pc_id)
-
-
 def _is_idle_event(text: str) -> bool:
     """Speak/wait-style event."""
     return is_dialogue(text) or "waits" in text.lower()
@@ -1045,8 +1058,9 @@ async def flow_dm(
                 usage_limits=_DM_USAGE,
             )
             logger.log_messages(label, result.all_messages())
-    except UsageLimitExceeded as exc:
-        print(f"  [limit] dm review ended: {exc}", flush=True)
+    except AgentRunError as exc:
+        # Bookkeeping is optional: a failed review costs this tick's enrichment only.
+        print(f"  [fallback] dm review failed: {exc}", flush=True)
         fallback = DMResult(creates=[], modifies=[], minutes=[1] * len(new_events))
         return replay.dm(fallback) if replay else fallback
     dm_result = result.output
@@ -1077,8 +1091,8 @@ async def flow_director(
                     usage_limits=_DM_USAGE,
                 )
                 logger.log_messages(label, result.all_messages())
-        except UsageLimitExceeded as exc:
-            print(f"  [limit] director beat ended: {exc}", flush=True)
+        except AgentRunError as exc:
+            print(f"  [fallback] director beat failed: {exc}", flush=True)
             if replay:
                 replay.director(None)
             return
@@ -1232,12 +1246,22 @@ async def tick(
             update.action == "update_quest"
             and (update.advance or is_final_status)
             and quest
-            and not _can_advance_objective(
-                state, quest, intent, new_events, update.step
+            and quest.status == "active"
+            and (
+                guard := _objective_veto(state, quest, intent, new_events, update.step)
             )
         ):
-            print(
-                f"  [quest] {update.target_id}: current objective requires its owner's relevant resolution attempt."
+            print(f"  [quest] {update.target_id}: vetoed by guard '{guard}'.")
+            logger.log_event(
+                "quest_advance_vetoed",
+                guard=guard,
+                quest=quest.id,
+                objective=quest.plan[quest.current_step] if quest.plan else None,
+                claim=update.step,
+                status=update.status,
+                actor=intent.actor,
+                tool=intent.kind,
+                events=[event.text for event in new_events],
             )
             continue
         msg = await resolve(update, state, logger=logger)
@@ -1293,6 +1317,7 @@ async def _run_game(
     progress_callback: Callable[[WorldState], None] | None = None,
     replay: ReplayTape | None = None,
 ) -> bool:
+    """Run ticks until `max_turns` complete (0 = until interrupted). False if it gave up."""
     if replay:
         scenario, character_id = replay.resolve_context(scenario, character_id)
     manager = StateManager(scenario=scenario, resume=resume)
@@ -1305,11 +1330,12 @@ async def _run_game(
         print(result)
         if result.startswith("Cannot spawn"):
             raise RuntimeError(result)
-        pc_id = new_character["character_id"]
-    else:
-        pc_id = character_id or manager.manifest["pc"]
-        if pc_id not in state.characters:
-            raise RuntimeError(f"PC '{pc_id}' not in scenario '{manager.scenario}'")
+        state.protagonist = new_character["character_id"]
+    elif not state.protagonist:
+        state.protagonist = character_id or manager.manifest["pc"]
+    pc_id = state.protagonist
+    if pc_id not in state.characters:
+        raise RuntimeError(f"PC '{pc_id}' not in scenario '{manager.scenario}'")
 
     if replay:
         replay.bind_context(manager.scenario, pc_id)
@@ -1331,58 +1357,90 @@ async def _run_game(
         else None,
     )
     run_failed = False
+    failures = 0
+    turns = 0
+    mark = replay.mark() if replay else 0
     try:
         manager.save_state(state)
         if progress_callback:
             progress_callback(state)
         logger.log_event("world_snapshot", **_snapshot(state))
-        for t in range(max_turns):
-            if outcome := _campaign_outcome(state, pc_id):
-                _announce_campaign_outcome(state, pc_id, logger, outcome)
-                break
+        while not max_turns or turns < max_turns:
             if stop_check and stop_check():
                 logger.log_event("run_stopped")
-                break
-            if state.characters[pc_id].stats.hp <= 0:
-                _announce_pc_death(pc_id, logger)
                 break
             print(f"\n--- Tick {state.time + 1} ---")
             logger.log_turn(state.time + 1)
             pre_minutes = state.minutes_elapsed
+            before = state.model_copy(deep=True)
+            mark = replay.mark() if replay else 0
             try:
-                turn_completed = await tick(
-                    pc_id, state, state.time, logger, pc_controller, replay
-                )
-            except AgentRunError as exc:
+                if replay and replay.skipped():
+                    raise _SkippedTick("recorded as skipped")
+                await campaign_upkeep(state, logger, replay)
+                # A retried tick rotates to the next actor instead of repeating a failure.
+                if not await tick(
+                    state.protagonist,
+                    state,
+                    state.time + failures,
+                    logger,
+                    pc_controller,
+                    replay,
+                ):
+                    raise _SkippedTick("no character action")
+                succeed_if_dead(state, logger)
+            except (AgentRunError, _SkippedTick) as exc:
+                for field_name in WorldState.model_fields:
+                    setattr(state, field_name, getattr(before, field_name))
+                if replay:
+                    replay.skip(mark)
+                failures += 1
                 logger.log_event(
-                    "run_error", error=type(exc).__name__, message=str(exc)
+                    "tick_failed",
+                    error=type(exc).__name__,
+                    message=str(exc),
+                    consecutive=failures,
                 )
-                print(f"  [error] campaign stopped: {exc}", flush=True)
-                run_failed = True
-                break
-            if turn_completed is False:
-                logger.log_event("run_stopped", reason="no_character_action")
-                break
+                print(
+                    f"  [error] tick skipped ({failures} in a row): {exc}", flush=True
+                )
+                if failures >= MAX_FAILED_TICKS:
+                    logger.log_event(
+                        "run_error", error=type(exc).__name__, message=str(exc)
+                    )
+                    print("  [error] campaign stopped: too many failed ticks.")
+                    run_failed = True
+                    break
+                if not (replay and replay.is_playback):
+                    await asyncio.sleep(FAILED_TICK_BACKOFF_S * failures)
+                continue
+            failures = 0
+            turns += 1
             # Off-screen agendas march with in-world time, not turn count.
             WorldOperations(state).advance_faction_clocks_hourly(
                 pre_minutes, state.minutes_elapsed
             )
             await compact_history(
-                state, logger, replay, manager.state_dir, pc_id
+                state, logger, replay, manager.state_dir, state.protagonist
             )  # between ticks only — never mid-tick
             logger.log_event("world_snapshot", **_snapshot(state))
             state.time += 1
             manager.save_state(state)
             if progress_callback:
                 progress_callback(state)
-            if outcome := _campaign_outcome(state, pc_id):
-                _announce_campaign_outcome(state, pc_id, logger, outcome)
-                break
-            if state.characters[pc_id].stats.hp <= 0:
-                _announce_pc_death(pc_id, logger)
-                break
         if replay:
             replay.assert_consumed()
+    except asyncio.CancelledError:
+        # Ctrl-C: the last completed tick is already saved; the partial one is dropped.
+        logger.log_event("run_stopped", reason="interrupted")
+        if replay:
+            replay.truncate(mark)
+        print(
+            f"\n=== Interrupted. Tick {state.time} is saved; continue with "
+            f"--resume --scenario {manager.scenario} ===",
+            flush=True,
+        )
+        raise
     except Exception as exc:
         logger.log_event("run_error", error=type(exc).__name__, message=str(exc))
         print(f"  [error] campaign crashed: {exc}", flush=True)
@@ -1405,14 +1463,17 @@ def run_game(
     # Narrative text (arrows, em-dashes) doesn't fit Windows' default console codepage.
     if isinstance(sys.stdout, TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    return asyncio.run(
-        _run_game(
-            scenario,
-            character_id,
-            max_turns,
-            new_character,
-            resume=resume,
-            replay=replay,
-            pc_controller=pc_controller,
+    try:
+        return asyncio.run(
+            _run_game(
+                scenario,
+                character_id,
+                max_turns,
+                new_character,
+                resume=resume,
+                replay=replay,
+                pc_controller=pc_controller,
+            )
         )
-    )
+    except KeyboardInterrupt:
+        return True

@@ -158,3 +158,22 @@ def test_resolved_quest_stops_linked_deadline_without_overwriting_status():
     assert state.quests["save-village"].status == "completed"
     assert clock.progress == 2
     assert state.history == []
+
+
+def test_add_faction_links_one_clock_to_a_known_quest():
+    state = WorldState(quests={"bells": Quest(id="bells", title="Bells")})
+    ops = WorldOperations(state)
+
+    assert (
+        ops.add_faction(
+            "tide-court", "Tide Court", "Flood the town", "It floods.", 12, "bells"
+        )
+        == "Faction 'tide-court' added."
+    )
+    clock = state.factions["tide-court"].clocks[0]
+    assert (clock.segments, clock.fail_quest_id) == (12, "bells")
+
+    assert "already exists" in ops.add_faction("Tide Court", "x", "y", "z", 3)
+    assert "not found" in ops.add_faction("other", "x", "y", "z", 3, "missing")
+    assert "needs a consequence" in ops.add_faction("other", "x", "y", " ", 3)
+    WorldState.model_validate(state.model_dump())
