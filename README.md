@@ -22,6 +22,11 @@ AI-driven D&D engine where LLM agents run tabletop RPG sessions autonomously.
 - extract to desired path (`C:\Users\{USER}\.local\bin\llama-cuda`)
 - add the folder to your `PATH`.
 
+**LLM (Ollama):** any OpenAI-compatible server works without llama.cpp — e.g.
+`LLM_PROVIDER=ollama LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=<model>`.
+Give the model at least a 12k context (`PARAMETER num_ctx 12288` in a Modelfile);
+Ollama's 4k default truncates the prompts.
+
 ### ⚡ Running stuff
 - `infinite-dnd` - runs the game
 - `infinite-dnd --new-character` - runs the game with an interactively-created PC

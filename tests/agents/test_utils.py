@@ -9,7 +9,7 @@ from pydantic_ai import Agent, ToolOutput
 from src.agents import utils
 
 
-@pytest.mark.parametrize("provider", ["deepseek", "local"])
+@pytest.mark.parametrize("provider", ["deepseek", "ollama", "local"])
 def test_required_tool_request(monkeypatch, provider):
     """DeepSeek disables thinking; other compatible endpoints keep their defaults."""
     requests = []
@@ -75,3 +75,6 @@ def test_required_tool_request(monkeypatch, provider):
         assert requests[0]["thinking"] == {"type": "disabled"}
     else:
         assert "thinking" not in requests[0]
+    assert requests[0].get("reasoning_effort") == (
+        "none" if provider == "ollama" else None
+    )

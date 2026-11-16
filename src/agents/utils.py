@@ -12,13 +12,21 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 
+# Each OpenAI-compatible server spells "don't think" differently.
+_NO_THINKING = {
+    "deepseek": {"thinking": {"type": "disabled"}},
+    "ollama": {"reasoning_effort": "none"},
+}
+
+
 def create_model() -> Model:
     """Create a Model from environment variables.
 
     LLM_PROVIDER=anthropic uses the Claude API (ANTHROPIC_API_KEY); "openai"
     uses the real OpenAI API (OPENAI_API_KEY) with a configurable reasoning
     effort; anything else uses an OpenAI-compatible endpoint (local by
-    default). DeepSeek thinking is disabled so required tool calls work.
+    default). Thinking is disabled for DeepSeek and Ollama so required tool
+    calls work and local turns stay fast.
     """
     provider = os.getenv("LLM_PROVIDER", "local")
     if provider == "anthropic":
@@ -43,8 +51,8 @@ def create_model() -> Model:
             base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),
             api_key=os.getenv("LLM_API_KEY", "not-needed"),
         ),
-        settings=OpenAIChatModelSettings(extra_body={"thinking": {"type": "disabled"}})
-        if provider == "deepseek"
+        settings=OpenAIChatModelSettings(extra_body=_NO_THINKING[provider])
+        if provider in _NO_THINKING
         else None,
     )
 
