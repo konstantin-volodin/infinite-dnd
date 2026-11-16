@@ -24,7 +24,7 @@ def dm_context(deps) -> str:
     ]
     return render(
         "dm/state.jinja",
-        chronicle=state.chronicle[-3:],
+        chronicle=state.chronicle,
         context_events=deps.context_events,
         new_events=deps.new_events,
         location_ids=location_ids,
@@ -55,7 +55,7 @@ def director_context(deps) -> str:
     )
     return render(
         "dm/director_state.jinja",
-        chronicle=state.chronicle[-3:],
+        chronicle=state.chronicle,
         recent_events=recent_events,
         quests=quests,
         interventions=state.director_interventions,
