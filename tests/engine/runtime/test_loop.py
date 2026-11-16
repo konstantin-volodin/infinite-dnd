@@ -2165,6 +2165,7 @@ def test_resumed_game_logs_next_world_turn_instead_of_restarting_at_one(monkeypa
     class Manager:
         run_id = "resumed-run"
         scenario = "demo"
+        state_dir = None  # compaction is stubbed out
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Continue it."}
 
         def __init__(self, **_kwargs):
@@ -2220,6 +2221,7 @@ def test_game_loop_stops_immediately_after_campaign_victory(monkeypatch):
     class Manager:
         run_id = "test-run"
         scenario = "demo"
+        state_dir = None  # compaction is stubbed out
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
         def __init__(self, **_kwargs):
@@ -2274,6 +2276,7 @@ def test_game_loop_records_pc_death_on_final_turn(monkeypatch):
     class Manager:
         run_id = "test-run"
         scenario = "demo"
+        state_dir = None  # compaction is stubbed out
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Survive it."}
 
         def __init__(self, **_kwargs):
@@ -2330,6 +2333,7 @@ def test_game_loop_records_provider_failure_without_persisting_partial_turn(
     class Manager:
         run_id = "test-run"
         scenario = "demo"
+        state_dir = None  # compaction is stubbed out
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
         def __init__(self, **_kwargs):
@@ -2387,6 +2391,7 @@ def test_game_loop_records_retry_exhaustion_without_persisting_partial_turn(
     class Manager:
         run_id = "test-run"
         scenario = "demo"
+        state_dir = None  # compaction is stubbed out
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
         def __init__(self, **_kwargs):
@@ -2442,6 +2447,7 @@ def test_game_loop_logs_and_reraises_unexpected_post_turn_failure(monkeypatch):
     class Manager:
         run_id = "test-run"
         scenario = "demo"
+        state_dir = None  # compaction is stubbed out
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
         def __init__(self, **_kwargs):
@@ -2501,6 +2507,7 @@ def test_game_loop_does_not_persist_turn_without_character_action(monkeypatch):
     class Manager:
         run_id = "test-run"
         scenario = "demo"
+        state_dir = None  # compaction is stubbed out
         manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
 
         def __init__(self, **_kwargs):

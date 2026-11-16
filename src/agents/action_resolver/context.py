@@ -80,7 +80,7 @@ def action_resolver_context(
         others=others,
         known_characters=known_characters,
         quests=quests,
-        chronicle=state.chronicle[-3:],
+        chronicle=state.chronicle,
         recent_events=recent_events,
         health_status=get_health_status(char),
     )

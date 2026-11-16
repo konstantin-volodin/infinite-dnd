@@ -135,8 +135,8 @@ class ReplayTape:
             minutes=[int(value) for value in payload["minutes"]],
         )
 
-    def chronicle(self, output: str | None = None) -> str:
-        return str(self._exchange("chronicle", "chronicle", output))
+    def chronicle(self, output: str | None = None, key: str = "chapter") -> str:
+        return str(self._exchange("chronicle", key, output))
 
     def action_resolution(
         self, actor_id: str, state: WorldState, result: str | None = None
