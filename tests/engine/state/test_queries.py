@@ -5,9 +5,11 @@ from src.engine.state.queries import (
     characters_in_location,
     connected_location_ids,
     live_factions,
+    named_ids,
     nearby_location_ids,
     resolve_character,
     resolve_location_id,
+    route,
     slugify,
 )
 
@@ -133,6 +135,32 @@ def test_nearby_location_ids_walks_a_bounded_number_of_hops():
     assert nearby_location_ids(state, ["a"]) == ["a", "b", "c"]
     assert nearby_location_ids(state, ["a", "d"], hops=1) == ["a", "d", "b", "c"]
     assert nearby_location_ids(state, ["nowhere"]) == []
+
+
+def test_route_is_the_shortest_known_path():
+    chain = ["a", "b", "c", "d"]
+    state = WorldState(
+        locations={
+            lid: Location(
+                id=lid,
+                connections=[n for n in chain if abs(chain.index(n) - i) == 1],
+            )
+            for i, lid in enumerate(chain)
+        }
+    )
+    state.locations["a"].connections.append("d")  # a shortcut
+
+    assert route(state, "a", "c") == ["b", "c"]
+    assert route(state, "b", "d") in (["a", "d"], ["c", "d"])
+    state.locations["e"] = Location(id="e")
+    assert route(state, "a", "e") is None
+
+
+def test_named_ids_finds_ids_spelled_out_in_prose():
+    ids = ["iron-gate-ruins", "elara-scribe", "dock"]
+    text = "interrogate Elara-scribe at Iron Gate Ruins"
+    assert named_ids(text, ids) == {"iron-gate-ruins", "elara-scribe"}
+    assert named_ids("search the docks", ids) == set()
 
 
 def test_live_factions_hide_finished_and_orphaned_agendas():

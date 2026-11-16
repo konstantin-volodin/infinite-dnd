@@ -3,11 +3,13 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-from pydantic import BaseModel
+import json
+
+from pydantic import BaseModel, model_validator
 from pydantic_ai import Agent, RunContext, ToolOutput
 
 from src.engine.state import WorldState
-from src.agents.utils import create_model
+from src.agents.utils import OUTPUT_RETRIES, create_model
 from .tools import Create, Modify
 from .context import dm_context, dm_system
 
@@ -28,6 +30,12 @@ class NewEntity(BaseModel):
     goal: str | None = None
     owner: str | None = None
     plan: list[str] | None = None  # quests only: 3-5 concrete, ordered objectives
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_json_text(cls, data):
+        """Small models sometimes send the object as a JSON string; take it."""
+        return json.loads(data) if isinstance(data, str) else data
 
     def to_create(self) -> Create:
         return Create(**self.model_dump())
@@ -114,6 +122,7 @@ agent: Agent[DMDeps, DMResult] = Agent(
     model=create_model(),
     deps_type=DMDeps,
     output_type=ToolOutput(dm_output, name="report"),
+    output_retries=OUTPUT_RETRIES,
     instructions="You maintain the world after each turn: register new entities, advance quests, adjust relationships, and estimate time elapsed.",
 )
 

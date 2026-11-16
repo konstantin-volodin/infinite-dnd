@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
 
-from src.agents.utils import create_model, render
+from src.agents.utils import OUTPUT_RETRIES, create_model, render
 from src.engine.state import (
     WorldOperations,
     WorldState,
@@ -187,7 +187,7 @@ agent: Agent[StorytellerDeps, Arc] = Agent(
     model=create_model(),
     deps_type=StorytellerDeps,
     output_type=ToolOutput(report, name="report"),
-    output_retries=2,
+    output_retries=OUTPUT_RETRIES,
     instructions="You open the next arc of an ongoing D&D campaign. Call `report` once.",
 )
 

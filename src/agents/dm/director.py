@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext, ToolOutput
 
 from src.engine.state import WorldState
-from src.agents.utils import create_model
+from src.agents.utils import OUTPUT_RETRIES, create_model
 from .agent import NewEntity
 from .tools import Create
 from .context import director_context, director_system
@@ -39,6 +39,7 @@ agent: Agent[DirectorDeps, DirectorResult] = Agent(
     model=create_model(),
     deps_type=DirectorDeps,
     output_type=ToolOutput(director_output, name="report"),
+    output_retries=OUTPUT_RETRIES,
     instructions="The story has stalled. You introduce exactly one concrete complication grounded in the existing world.",
 )
 

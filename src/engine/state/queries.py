@@ -1,7 +1,9 @@
 """Read-only lookups over WorldState. Fuzzy id resolution lives here."""
 
+from collections import deque
+
 from src.engine.state.identifiers import slugify
-from src.engine.state.models import Character, Faction, ProgressClock, WorldState
+from src.engine.state.models import Character, Faction, ProgressClock, Quest, WorldState
 
 _CHARACTER_ID_ARTICLES = {"a", "an", "the"}
 
@@ -74,6 +76,54 @@ def connected_location_ids(state: WorldState, location_id: str) -> list[str]:
     if not loc:
         return []
     return [c for c in loc.connections if c in state.locations]
+
+
+def route(state: WorldState, start: str, goal: str) -> list[str] | None:
+    """Shortest path from start to goal as the places entered, in order. None if unreachable."""
+    came_from = {start: start}
+    queue = deque([start])
+    while queue and goal not in came_from:
+        here = queue.popleft()
+        for neighbour in connected_location_ids(state, here):
+            if neighbour not in came_from:
+                came_from[neighbour] = here
+                queue.append(neighbour)
+    if goal not in came_from:
+        return None
+    path = [goal]
+    while path[-1] != start:
+        path.append(came_from[path[-1]])
+    return path[-2::-1]
+
+
+def named_ids(text: str, ids) -> set[str]:
+    """Known ids spelled out in free text, e.g. 'question Old Keph at harbor-dock'."""
+    padded = f"-{slugify(text)}-"
+    return {id_ for id_ in ids if f"-{slugify(id_)}-" in padded}
+
+
+def objective_routes(state: WorldState, char: Character) -> list[tuple[str, list[str]]]:
+    """Places the character's current objectives name, each with the route there."""
+    routes = []
+    for quest in state.quests.values():
+        if quest.owner != char.id or quest.status != "active":
+            continue
+        if quest.current_step >= len(quest.plan):
+            continue
+        for place in sorted(named_ids(quest.plan[quest.current_step], state.locations)):
+            if path := route(state, char.location, place):
+                routes.append((place, path))
+    return routes
+
+
+def find_quest(state: WorldState, raw: str) -> Quest | None:
+    """A quest by id, ignoring case and punctuation, or by a unique title."""
+    needle = slugify(raw)
+    for quest_id, quest in state.quests.items():
+        if slugify(quest_id) == needle:
+            return quest
+    titled = [q for q in state.quests.values() if slugify(q.title) == needle]
+    return titled[0] if len(titled) == 1 else None
 
 
 def nearby_location_ids(

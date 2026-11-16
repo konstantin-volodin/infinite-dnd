@@ -145,3 +145,18 @@ def test_character_prompt_prioritizes_current_objective_without_goal_churn():
     assert "never use `new_goal` merely to restate" in prompt
     assert "do not repeat the same action on the same target" in prompt
     assert "never use `new_goal` for the current search method" in prompt
+
+
+def test_context_shows_the_way_to_a_far_place_the_objective_names():
+    state = _state()
+    state.locations["tavern"].connections = ["bridge"]
+    state.locations["bridge"] = Location(id="bridge", connections=["tavern", "road"])
+    state.locations["road"] = Location(id="road", connections=["bridge", "ruins"])
+    state.locations["ruins"] = Location(id="ruins", connections=["road"])
+    state.quests["q"] = Quest(
+        id="q", title="Q", description="", owner="hero", plan=["dig at the Ruins"]
+    )
+
+    ctx = character_context(state.characters["hero"], state)
+
+    assert "cannot move until I am at ruins** — 3 legs away (via bridge, road)" in ctx

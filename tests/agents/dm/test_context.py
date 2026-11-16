@@ -1,6 +1,12 @@
 from src.agents.dm.context import director_context, director_system
 from src.agents.dm.director import DirectorDeps
-from src.engine.state.models import Character, CharacterStats, Location, WorldState
+from src.engine.state.models import (
+    Character,
+    CharacterStats,
+    Location,
+    Quest,
+    WorldState,
+)
 
 
 def test_director_context_includes_scene_affordances_and_motivations():
@@ -44,3 +50,29 @@ def test_director_prompt_preserves_player_agency():
 
     assert "at least two plausible responses" in prompt
     assert "never dictate what a character chooses" in prompt
+
+
+def test_director_context_points_at_where_the_current_objective_lies():
+    state = WorldState(
+        protagonist="hero",
+        locations={
+            "dock": Location(id="dock", connections=["road"]),
+            "road": Location(id="road", connections=["dock", "ruins"]),
+            "ruins": Location(id="ruins", connections=["road"]),
+        },
+        characters={"hero": Character(id="hero", location="dock")},
+        quests={
+            "q": Quest(
+                id="q",
+                title="Q",
+                description="",
+                owner="hero",
+                plan=["question the scribe at the ruins", "settle the debt"],
+            )
+        },
+    )
+
+    context = director_context(DirectorDeps(state=state, location_id="dock"))
+
+    assert "current objective: **question the scribe at the ruins**" in context
+    assert "it lies at **ruins**, 2 legs from here" in context

@@ -4,7 +4,7 @@ Character-scoped operations: movement, dialogue, items, stats, relationships, kn
 
 from src.engine.rules import DieRoller, attack_damage, kill_xp
 from src.engine.state.operations._base import _OpsBase
-from src.engine.state.queries import resolve_character, slugify
+from src.engine.state.queries import resolve_character, route, slugify
 
 _XP_PER_LEVEL = 100
 
@@ -34,14 +34,17 @@ class CharacterOps(_OpsBase):
         if not char:
             return f"Cannot move — character '{character_id}' not found."
 
-        current = self.state.locations.get(char.location)
         if destination_id not in self.state.locations:
             return f"Cannot move to '{destination_id}' — location not found."
-        if current and destination_id not in current.connections:
-            return f"Cannot reach '{destination_id}' from '{char.location}' — connected locations: {current.connections}."
+        # A far known place is one journey along the shortest known route.
+        path = route(self.state, char.location, destination_id)
+        if char.location in self.state.locations and not path:
+            return f"Cannot reach '{destination_id}' from '{char.location}' — no known route."
 
         char.location = destination_id
         result = f"{character_id} moved to '{destination_id}'."
+        if path and len(path) > 1:
+            result = f"{character_id} travelled via {', '.join(path[:-1])} to '{destination_id}'."
         self._log(result, destination_id, [character_id])
         return result
 
