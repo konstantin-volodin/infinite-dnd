@@ -541,6 +541,17 @@ def test_npcs_addressing_each_other_do_not_starve_the_hero_of_turns():
     assert _pick_next_actor(state, "hero", 0) == "hero"
 
 
+def test_hero_acts_every_other_tick_in_a_crowded_scene():
+    """Seen live: four NPCs in the scene left the hero one turn in five."""
+    state = _state()
+    for npc in ("calla", "keph", "marin"):
+        state.characters[npc] = Character(id=npc, location="tavern", goal="talk")
+
+    turns = [_pick_next_actor(state, "hero", tick) for tick in range(6)]
+
+    assert turns == ["hero", "calla", "hero", "keph", "hero", "marin"]
+
+
 # ============ STALL DETECTION ============
 
 

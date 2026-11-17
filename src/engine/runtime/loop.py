@@ -174,7 +174,12 @@ def _pick_next_actor(state: WorldState, active_pc_id: str, tick: int) -> str:
         # gives the hero another turn. NPCs addressing each other do not jump
         # the queue, or their exchange starves the hero of turns.
         return pending_responders[0]
-    return actors[tick % len(actors)]
+    # It is the hero's story: they act every other tick however crowded the
+    # scene is, and the others share the turns in between.
+    others = actors[1:]
+    if tick % 2 == 0 or not others:
+        return active_pc_id
+    return others[tick // 2 % len(others)]
 
 
 def _describe_tool(tool: CharacterTool) -> str:
@@ -609,7 +614,11 @@ async def flow_director(
 
     # Director events are retcon-style arrivals: logged, printed, 0 minutes.
     pre = len(state.history)
-    if beat.create:
+    # A crew or gang is not a character: left in, it takes turns and speaks as one person.
+    if beat.create and not (
+        beat.create.type == "npc"
+        and _NON_PERSON_NPC_NAME_PATTERN.search(beat.create.name)
+    ):
         await resolve(beat.create, state, logger=logger)
     if beat.event:
         WorldOperations(state).world_event(beat.event, location_id)

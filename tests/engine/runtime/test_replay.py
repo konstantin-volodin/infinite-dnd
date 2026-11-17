@@ -344,3 +344,29 @@ def test_endless_run_with_a_skipped_tick_and_a_new_arc_replays_identically(
     state = StateManager("cursed-heirloom", run_id=replayed.name).load_state(final)
     assert state.quests["the-crows-letter"].status == "active"
     assert "hollowmere-gate" in state.locations["manor-foyer"].connections
+
+
+def test_director_cannot_add_a_group_as_a_character(tmp_path):
+    """Seen live: a 'patrol-crew' took turns and spoke like one person."""
+    path = tmp_path / "run.jsonl"
+    tape = ReplayTape.recording(path)
+    tape.director(
+        DirectorResult(
+            event="A patrol crew descends the steps.",
+            create=Create(type="npc", name="Patrol Crew", location="tavern"),
+        )
+    )
+    tape.director(
+        DirectorResult(
+            event="A lone sergeant follows.",
+            create=Create(type="npc", name="Sergeant Bram", location="tavern"),
+        )
+    )
+    state = _state()
+    playback = ReplayTape.playback(path)
+    asyncio.run(flow_director(state, "tavern", _Logger(), playback))
+    asyncio.run(flow_director(state, "tavern", _Logger(), playback))
+
+    assert "patrol-crew" not in state.characters
+    assert "sergeant-bram" in state.characters
+    assert "A patrol crew descends the steps." in [e.text for e in state.history]
