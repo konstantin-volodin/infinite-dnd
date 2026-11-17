@@ -6,6 +6,7 @@ from src.engine.state import (
     characters_in_location,
     connected_location_ids,
     is_dialogue,
+    objective_routes,
     quest_deadline_clocks,
 )
 from src.engine.rules import get_health_status
@@ -84,6 +85,7 @@ def character_context(char: Character, state: WorldState) -> str:
         health_status=health_status,
         loc=loc,
         nearby_routes=nearby_routes,
+        objective_routes=objective_routes(state, char),
         knowledge=knowledge,
         chronicle=state.chronicle,
         recent_events=recent_events,

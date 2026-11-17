@@ -136,3 +136,11 @@ def test_action_output_allows_noninteractive_remote_reference_and_local_interact
 
     assert research.description == "Search the ledger for references to Eleanor."
     assert interaction.description == "Question the merchant about the ledger."
+
+
+def test_travel_output_accepts_a_far_place_along_a_known_route():
+    ctx = _context(connections=["forest"])
+    ctx.deps.state.locations["forest"].connections = ["tavern", "ruins"]
+    ctx.deps.state.locations["ruins"] = Location(id="ruins", connections=["forest"])
+
+    assert travel_output(ctx, "ruins").destination == "ruins"

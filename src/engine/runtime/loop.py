@@ -15,7 +15,10 @@ from src.engine.state import (
     WorldOperations,
     WorldState,
     is_dialogue,
+    find_quest,
+    named_ids,
     resolve_character,
+    route,
     slugify,
 )
 from src.engine.state.models import HistoryEvent, Quest
@@ -62,85 +65,10 @@ _CREATE_ORDER = {"location": 0, "npc": 1, "item": 2, "quest": 3}
 _STALL_QUIET_TICKS = 6
 _STALL_IDLE_EVENTS = 5
 
-_FINAL_OBJECTIVE_VERB_FORMS = {
-    "clear": {"clear", "clears", "cleared"},
-    "confront": {"confront", "confronts", "confronted"},
-    "defeat": {"defeat", "defeats", "defeated"},
-    "find": {"find", "finds", "found"},
-    "gather": {"gather", "gathers", "gathered"},
-    "recover": {"recover", "recovers", "recovered"},
-    "report": {"report", "reports", "reported"},
-    "track": {"track", "tracks", "tracked"},
-}
-_FINAL_OBJECTIVE_STOP_WORDS = {
-    "a",
-    "an",
-    "and",
-    "at",
-    "before",
-    "by",
-    "for",
-    "from",
-    "in",
-    "of",
-    "on",
-    "or",
-    "the",
-    "to",
-    "with",
-}
-_FINAL_OBJECTIVE_DISCOVERY_PATTERN = re.compile(
-    r"\b(?:clue|clues|lead|whereabouts|destination)\b"
-    r"|\blocation(?:\s+(?:of|for))?\b"
-    r"|\b(?:map|path|route|trail)\s+(?:about|for|of|to|toward|towards|leading|pointing)\b"
-    r"|\b[a-z]+['’]s\s+(?:map|path|route|trail)\b"
-    r"|\b[a-z]+['’]s\s+(?:house|home|hideout|camp|cabin|room|cave|cellar|quarters)\b"
-    r"|\b(?:house|home|hideout|camp|cabin|room|cave|cellar|quarters)\b[^.!?]{0,80}\b(?:of|where|containing|holding)\b"
-    r"|\b(?:hiding\s+place|hiding\s+spot)\b"
-    r"|\bwhere\b[^.!?]{0,80}\b(?:is|was|are|were)\s+(?:hiding|located|staying|living)\b"
-    r"|\b(?:where|place|spot|site)\b[^.!?]{0,80}\b(?:last\s+seen|last\s+known|was\s+seen|were\s+seen)\b"
-)
-_FINAL_OBJECTIVE_INDIRECT_FIND_PATTERN = re.compile(
-    r"\b(?:description|descriptions|evidence|information|portrait|portraits|proof|record|records|"
-    r"report|reports|poster|posters|rumor|rumors|rumour|rumours|sign|signs|testimony|trace|traces)\b"
-)
-_FINAL_OBJECTIVE_CONSTRAINT_PATTERN = re.compile(
-    r"\b(?:after|at|before|by|during|until)\b"
-)
-_OBJECTIVE_GENERIC_WORDS = {
-    "about",
-    "around",
-    "clue",
-    "clues",
-    "evidence",
-    "hidden",
-    "information",
-    "known",
-    "last",
-    "movement",
-    "movements",
-    "proof",
-    "sign",
-    "signs",
-    "unusual",
-    "whereabouts",
-}
-_REFERENTIAL_CONTACT_OBJECTIVE_PATTERN = re.compile(
-    r"^(?:find|locate|track\s+down)\s+(?:the\s+)?(?:person|somebody|someone|who|whoever|witness)\b"
-)
-_DIALOGUE_OBJECTIVE_PATTERN = re.compile(
-    r"^(?:ask|interview|question|speak(?:\s+to)?|talk(?:\s+to)?)\b"
-)
-_DIALOGUE_ATTEMPT_PATTERN = re.compile(
-    r"^(?:ask|interview|question|speak(?:\s+to)?|talk(?:\s+to)?)\b"
-)
-_OBJECTIVE_ATTEMPT_TYPES = (Action, Attack, Check, Speak)
-_FAILED_ATTEMPT_PATTERN = re.compile(
-    r"\b(?:cannot|failed|fails|nothing)\b"
-    r"|\bno\s+(?:clue|clues|evidence|new|sign|signs|useful)\b"
-    r"|\bno\s+(?:direct\s+)?information\b"
-    r"|\bno\s+(?:direct\s+)?references?\b"
-)
+# Ticks that must pass between two accepted steps of one quest, so an over-eager
+# DM cannot burn through a plan on consecutive turns.
+MIN_TICKS_BETWEEN_ADVANCES = 2
+
 _FACTION_ACCELERATION_CAUSE_PATTERN = re.compile(
     r"\b(?:alerts?|alerted|burns?|burned|catches?|caught|confronts?|confronted|"
     r"destroys?|destroyed|discovers?|discovered|escapes?|escaped|informs?|informed|"
@@ -190,8 +118,10 @@ _INDEFINITE_LOCATION_WORDS = {"a", "an", "another", "some"}
 # ─── Scheduler ────────────────────────────────────────────────
 
 
-def _awaiting_response(state: WorldState, character_id: str) -> bool:
-    """Whether the latest speech involving the character directly addressed them."""
+def _awaiting_response(
+    state: WorldState, character_id: str, speaker: str | None = None
+) -> bool:
+    """Whether the latest speech involving the character directly addressed them (by `speaker`, if given)."""
     for event in reversed(state.history):
         if (
             character_id not in event.characters
@@ -199,7 +129,11 @@ def _awaiting_response(state: WorldState, character_id: str) -> bool:
             or not event.text.startswith(f"{event.characters[0]} says")
         ):
             continue
-        return len(event.characters) > 1 and event.characters[-1] == character_id
+        return (
+            len(event.characters) > 1
+            and event.characters[-1] == character_id
+            and speaker in (None, event.characters[0])
+        )
     return False
 
 
@@ -232,11 +166,13 @@ def _pick_next_actor(state: WorldState, active_pc_id: str, tick: int) -> str:
     pending_responders = [
         character_id
         for character_id in actors
-        if character_id != active_pc_id and _awaiting_response(state, character_id)
+        if character_id != active_pc_id
+        and _awaiting_response(state, character_id, speaker=active_pc_id)
     ]
     if pending_responders:
-        # A direct question should produce a reply before round-robin rotation
-        # gives the speaker another turn and encourages duplicate dialogue.
+        # The hero's direct question gets a reply before round-robin rotation
+        # gives the hero another turn. NPCs addressing each other do not jump
+        # the queue, or their exchange starves the hero of turns.
         return pending_responders[0]
     return actors[tick % len(actors)]
 
@@ -389,10 +325,10 @@ def _log_rejected_world_modification(
 # ─── Stall detection ──────────────────────────────────────────
 
 
-def _minimum_action_minutes(tool: CharacterTool) -> int:
+def _minimum_action_minutes(tool: CharacterTool, legs: int = 1) -> int:
     """Keep direct actions consequential when the DM underestimates their duration."""
     if isinstance(tool, Travel):
-        return 10
+        return 10 * max(1, legs)
     if isinstance(tool, Wait):
         return 5
     if isinstance(tool, Action) and any(
@@ -457,163 +393,6 @@ def _can_accelerate_faction_clock(
     return bool(_FACTION_ACCELERATION_CAUSE_PATTERN.search(event_text.casefold()))
 
 
-def _claim_mentions_target(claim: str, target_id: str) -> bool:
-    """Match canonical IDs in prose, including punctuated initialisms like ``V.M.``."""
-    target_words = re.findall(r"[a-z0-9]+", target_id.casefold())
-    claim_words = re.findall(r"[a-z0-9]+", claim.casefold())
-    if set(target_words) <= set(claim_words):
-        return True
-
-    # A short canonical ID may be rendered as separated initials by the DM.
-    # Only join one-character tokens, so ordinary phrases cannot match ``vm``.
-    if len(target_words) != 1 or not 1 < len(target_words[0]) <= 4:
-        return False
-    initials = target_words[0]
-    width = len(initials)
-    return any(
-        all(len(word) == 1 for word in window) and "".join(window) == initials
-        for index in range(len(claim_words) - width + 1)
-        if (window := claim_words[index : index + width])
-    )
-
-
-def _can_advance_final_objective(
-    quest,
-    tool: CharacterTool,
-    events: list[HistoryEvent] | None = None,
-    claimed_resolution: str | None = None,
-) -> bool:
-    return _final_objective_veto(quest, tool, events, claimed_resolution) is None
-
-
-def _final_objective_veto(
-    quest,
-    tool: CharacterTool,
-    events: list[HistoryEvent] | None = None,
-    claimed_resolution: str | None = None,
-) -> str | None:
-    """Require owner-attributed evidence that the final planned objective happened.
-
-    Returns the name of the guard that vetoed the advance, or None to allow it.
-    """
-    if not quest.plan or quest.current_step != len(quest.plan) - 1:
-        return None
-    if tool.actor != quest.owner:
-        return "final_not_owner"
-    if not isinstance(tool, (Action, Attack, Check, Speak)):
-        return "final_tool_cannot_advance"
-
-    objective_verb = quest.plan[quest.current_step].split(maxsplit=1)[0].casefold()
-    verb_forms = _FINAL_OBJECTIVE_VERB_FORMS.get(objective_verb, {objective_verb})
-    if objective_verb == "recover":
-        verb_forms |= {
-            "pick",
-            "picks",
-            "picked",
-            "take",
-            "takes",
-            "took",
-            "receive",
-            "receives",
-            "received",
-        }
-    objective_text = quest.plan[quest.current_step].casefold()
-    target_text = _FINAL_OBJECTIVE_CONSTRAINT_PATTERN.split(objective_text, maxsplit=1)[
-        0
-    ]
-    objective_words = set(re.findall(r"[a-z]+", target_text))
-    objective_verbs = {
-        verb for verb in _FINAL_OBJECTIVE_VERB_FORMS if verb in objective_words
-    }
-    alternative_verbs = (
-        objective_verbs - {objective_verb}
-        if re.search(r"\bor\b", target_text)
-        else set()
-    )
-    target_words = objective_words - _FINAL_OBJECTIVE_STOP_WORDS - objective_verbs
-    alternative_forms = {
-        form for verb in alternative_verbs for form in _FINAL_OBJECTIVE_VERB_FORMS[verb]
-    }
-    resolution_forms = verb_forms | alternative_forms
-    resolution_pattern = re.compile(
-        rf"^{re.escape(quest.owner.casefold())}\s+(?:has\s+|have\s+)?(?:{'|'.join(resolution_forms)})\b"
-    )
-
-    for event in events or []:
-        text = event.text.casefold()
-        words = set(re.findall(r"[a-z]+", text))
-        if quest.owner not in event.characters or not resolution_pattern.match(text):
-            continue
-        if _FINAL_OBJECTIVE_DISCOVERY_PATTERN.search(text) or (
-            objective_verb in {"find", "recover"}
-            and _FINAL_OBJECTIVE_INDIRECT_FIND_PATTERN.search(text)
-        ):
-            continue
-        if (
-            resolution_forms & words
-            and target_words <= words
-            and (
-                not alternative_verbs
-                or any(
-                    _FINAL_OBJECTIVE_VERB_FORMS[verb] & words
-                    for verb in alternative_verbs
-                )
-            )
-        ):
-            return None
-
-    # Speech is durably recorded as ``owner says to target``, not as the
-    # resolution verb used by objectives such as "confront" or "report".
-    # Accept the DM's step classification only when the underlying turn is a
-    # confirmed direct address and the claim is anchored to both the objective
-    # and the addressed character. This keeps unrelated dialogue from closing
-    # a quest while allowing real speech events to satisfy speech objectives.
-    if not isinstance(tool, Speak) or not tool.target or not claimed_resolution:
-        return "final_no_resolution_event"
-    direct_speech = any(
-        event.characters[:1] == [quest.owner]
-        and tool.target in event.characters[1:]
-        and event.text.casefold().startswith(f"{quest.owner.casefold()} says")
-        for event in events or []
-    )
-    if not direct_speech:
-        return "final_no_resolution_event"
-
-    claim = claimed_resolution.casefold()
-    claim_words = set(re.findall(r"[a-z]+", claim))
-    claim_pattern = re.compile(
-        rf"^(?:{re.escape(quest.owner.casefold())}\s+)?"
-        rf"(?:has\s+|have\s+)?(?:{'|'.join(resolution_forms)})\b"
-    )
-    if not claim_pattern.match(claim) or _FINAL_OBJECTIVE_DISCOVERY_PATTERN.search(
-        claim
-    ):
-        return "final_claim_not_resolution"
-    if alternative_verbs and not any(
-        _FINAL_OBJECTIVE_VERB_FORMS[verb] & claim_words for verb in alternative_verbs
-    ):
-        return "final_claim_not_resolution"
-
-    target_id_words = set(re.findall(r"[a-z]+", tool.target.casefold()))
-    message_words = set(re.findall(r"[a-z]+", tool.message.casefold()))
-    claim_details = (
-        claim_words
-        - resolution_forms
-        - target_id_words
-        - set(re.findall(r"[a-z]+", quest.owner.casefold()))
-        - _FINAL_OBJECTIVE_STOP_WORDS
-    )
-    if not message_words & claim_details:
-        return "final_claim_not_in_message"
-    objective_anchor = target_words & claim_words
-    on_target = target_words <= claim_words or bool(
-        objective_anchor
-        and target_id_words
-        and _claim_mentions_target(claim, tool.target)
-    )
-    return None if on_target else "final_claim_off_target"
-
-
 def _word_roots(text: str) -> set[str]:
     """Normalize simple plurals so objectives and generated prose can be compared."""
     words = set(re.findall(r"[a-z]+", text.casefold().replace("-", " ")))
@@ -622,334 +401,59 @@ def _word_roots(text: str) -> set[str]:
     }
 
 
-def _named_objective_locations(state: WorldState, objective: str) -> set[str]:
-    """Return known location IDs explicitly named by an objective."""
-    objective_id = f"-{slugify(objective)}-"
-    matches: set[str] = set()
-    for location_id, location in state.locations.items():
-        aliases = {slugify(location_id), slugify(location.id)} - {""}
-        if any(f"-{alias}-" in objective_id for alias in aliases):
-            matches.add(slugify(location.id))
-    return matches
-
-
-def _is_grounded_referential_contact(
-    state: WorldState,
-    quest: Quest,
-    tool: CharacterTool,
-    owner_events: list[HistoryEvent],
-) -> bool:
-    """Recognize direct contact with an unnamed person already tied to the quest."""
-    objective = quest.plan[quest.current_step]
-    if (
-        not isinstance(tool, Speak)
-        or not tool.target
-        or not _REFERENTIAL_CONTACT_OBJECTIVE_PATTERN.search(objective.casefold())
-        or not any(tool.target in event.characters for event in owner_events)
-    ):
-        return False
-
-    actor = state.characters.get(quest.owner)
-    if not actor:
-        return False
-
-    context_words = _word_roots(f"{quest.title} {quest.description}")
-    context_words -= _word_roots(
-        " ".join((*_OBJECTIVE_GENERIC_WORDS, *_FINAL_OBJECTIVE_STOP_WORDS))
-    )
-    context_words -= {
-        form
-        for forms in _FINAL_OBJECTIVE_VERB_FORMS.values()
-        for form in _word_roots(" ".join(forms))
-    }
-    target_words = _word_roots(tool.target)
-    message_words = _word_roots(tool.message)
-    if not context_words & message_words:
-        return False
-
-    return any(
-        target_words & (fact_words := _word_roots(fact)) and context_words & fact_words
-        for fact in actor.knowledge
-    )
-
-
-def _dialogue_attempt_mentions_quest_topic(quest: Quest, tool: CharacterTool) -> bool:
-    """Require dialogue content, not just its target/location, to concern the quest."""
-    if isinstance(tool, Speak):
-        attempt_text = tool.message
-    elif isinstance(tool, (Action, Check)):
-        attempt_text = tool.description
-    else:
-        return False
-
-    objective = quest.plan[quest.current_step]
-    topic_words = _word_roots(f"{objective} {quest.title} {quest.description}")
-    topic_words -= _word_roots(" ".join(_OBJECTIVE_GENERIC_WORDS))
-    topic_words -= _word_roots("ask interview question speak talk")
-    topic_words -= {
-        form
-        for forms in _FINAL_OBJECTIVE_VERB_FORMS.values()
-        for form in _word_roots(" ".join(forms))
-    }
-    topic_words -= _FINAL_OBJECTIVE_STOP_WORDS | {"s"}
-    return not topic_words or bool(topic_words & _word_roots(attempt_text))
-
-
-def _is_grounded_dialogue_reply(
+def _quest_veto(
     state: WorldState,
     quest: Quest,
     tool: CharacterTool,
     events: list[HistoryEvent],
-) -> bool:
-    """Treat a relevant NPC answer as the outcome of its owner's preceding question."""
-    if (
-        not isinstance(tool, Speak)
-        or tool.actor == quest.owner
-        or tool.target != quest.owner
-        or not events
-        or not _dialogue_attempt_mentions_quest_topic(quest, tool)
-    ):
-        return False
-
-    direct_replies = [
-        event
-        for event in events
-        if event.characters[:1] == [tool.actor]
-        and quest.owner in event.characters[1:]
-        and event.text.casefold().startswith(
-            f"{tool.actor.casefold()} says to {quest.owner.casefold()}:"
-        )
-    ]
-    if not direct_replies or any(
-        _FAILED_ATTEMPT_PATTERN.search(event.text.casefold())
-        for event in direct_replies
-    ):
-        return False
-
-    prior_history = state.history
-    if len(state.history) >= len(events) and state.history[-len(events) :] == events:
-        prior_history = state.history[: -len(events)]
-    prior_exchange = next(
-        (
-            (index, event)
-            for index, event in reversed(list(enumerate(prior_history)))
-            if quest.owner in event.characters and tool.actor in event.characters
-        ),
-        None,
-    )
-    if not prior_exchange or not prior_exchange[1].text.casefold().startswith(
-        f"{quest.owner.casefold()} says to {tool.actor.casefold()}:"
-    ):
-        return False
-    exchange_index, exchange_event = prior_exchange
-    progress_marker = f"quest '{quest.id.casefold()}' progress"
-    if any(
-        progress_marker in event.text.casefold()
-        for event in prior_history[exchange_index + 1 :]
-    ):
-        return False
-
-    question = Speak(
-        actor=quest.owner,
-        target=tool.actor,
-        message=exchange_event.text.split(":", 1)[-1].strip(),
-    )
-    return _dialogue_attempt_mentions_quest_topic(quest, question)
-
-
-def _can_advance_objective(
-    state: WorldState,
-    quest: Quest,
-    tool: CharacterTool,
-    events: list[HistoryEvent],
-    claimed_resolution: str | None = None,
-) -> bool:
-    return _objective_veto(state, quest, tool, events, claimed_resolution) is None
-
-
-def _objective_veto(
-    state: WorldState,
-    quest: Quest,
-    tool: CharacterTool,
-    events: list[HistoryEvent],
-    claimed_resolution: str | None = None,
+    advanced: set[str],
 ) -> str | None:
-    """Require an owner-controlled attempt grounded in the current objective.
+    """Accept a DM progress claim only on facts the engine can check in state.
 
-    Returns the name of the guard that vetoed the advance, or None to allow it.
+    The DM judges *what* happened; the engine checks that it could have: a real
+    attempt by the owner (or a reply to them from someone the objective names),
+    at the place and with the people the objective names, that did not fail,
+    and not faster than one step per MIN_TICKS_BETWEEN_ADVANCES. Returns the
+    broken rule's name, or None to accept.
     """
-    if not quest.plan:
-        return None  # nothing to ground against (and nothing to index)
-    if quest.current_step == len(quest.plan) - 1:
-        return _final_objective_veto(quest, tool, events, claimed_resolution)
-    if _is_grounded_dialogue_reply(state, quest, tool, events):
-        return None
-    if tool.actor != quest.owner:
+    owner = state.characters.get(quest.owner)
+    if owner is None:
+        return "no_owner"
+    if not isinstance(tool, (Action, Attack, Check, Speak)):
+        return "not_an_attempt"
+    objective = (
+        quest.plan[quest.current_step] if quest.current_step < len(quest.plan) else ""
+    )
+    people = named_ids(objective, state.characters) - {owner.id}
+    reply = isinstance(tool, Speak) and tool.target == owner.id
+    if tool.actor != owner.id and not (reply and tool.actor in people):
         return "not_owner"
-    if not isinstance(tool, _OBJECTIVE_ATTEMPT_TYPES):
-        return "tool_cannot_advance"
-
-    objective = quest.plan[quest.current_step].casefold()
-    if _DIALOGUE_OBJECTIVE_PATTERN.match(objective) and not (
-        isinstance(tool, Speak)
-        or isinstance(tool, (Action, Check))
-        and _DIALOGUE_ATTEMPT_PATTERN.match(tool.description.casefold())
-    ):
-        return "dialogue_objective_needs_dialogue"
-    if _DIALOGUE_OBJECTIVE_PATTERN.match(
-        objective
-    ) and not _dialogue_attempt_mentions_quest_topic(quest, tool):
-        return "dialogue_off_topic"
-
-    owner_events = [event for event in events if quest.owner in event.characters]
-    if not owner_events:
-        return "no_owner_event"
     if any(
-        _FAILED_ATTEMPT_PATTERN.search(event.text.casefold()) for event in owner_events
+        event.text.startswith(("Cannot ", f"{tool.actor} fails:")) for event in events
     ):
-        return "failed_attempt_wording"
-
-    objective_locations = _named_objective_locations(
-        state, quest.plan[quest.current_step]
-    )
-    if objective_locations and not any(
-        slugify(event.location) in objective_locations for event in owner_events
-    ):
+        return "failed_attempt"
+    places = named_ids(objective, state.locations)
+    if places and owner.location not in places:
         return "wrong_location"
-
-    actor = state.characters.get(quest.owner)
-    attempt_parts = [actor.location if actor else ""]
-    if isinstance(tool, (Action, Check)):
-        attempt_parts.extend(
-            (
-                tool.description,
-                tool.target if isinstance(tool, Action) and tool.target else "",
-            )
-        )
-    elif isinstance(tool, Speak):
-        attempt_parts.extend((tool.message, tool.target or ""))
-    elif isinstance(tool, Attack):
-        attempt_parts.append(tool.target)
-    evidence_words = _word_roots(
-        " ".join((*attempt_parts, *(event.text for event in owner_events)))
-    )
-
-    objective_words = _word_roots(quest.plan[quest.current_step])
-    context_words = _word_roots(f"{quest.title} {quest.description}")
-    generic_words = _word_roots(" ".join(_OBJECTIVE_GENERIC_WORDS))
-    verb_words = {
-        form
-        for forms in _FINAL_OBJECTIVE_VERB_FORMS.values()
-        for form in _word_roots(" ".join(forms))
+    # Someone named only in passing ("supplies Jory guards") need not take
+    # part: only people actually at the objective's place are required.
+    expected = {
+        p for p in people if not places or state.characters[p].location in places
     }
-    verb_words.update(
-        _word_roots("ask check examine identify inspect investigate question search")
-    )
-    anchors = (
-        objective_words
-        - context_words
-        - generic_words
-        - verb_words
-        - _FINAL_OBJECTIVE_STOP_WORDS
-        - {"s"}
-    )
-    required_matches = min(2, len(anchors))
-    grounded = (
-        not anchors
-        or len(anchors & evidence_words) >= required_matches
-        or _is_grounded_referential_contact(state, quest, tool, owner_events)
-    )
-    return None if grounded else "objective_words_missing"
-
-
-def _advance_grounded_objective(
-    state: WorldState,
-    actor_id: str,
-    tool: CharacterTool,
-    events: list[HistoryEvent],
-    steps_before: dict[str, int],
-) -> list[str]:
-    """Advance an unchanged search objective when this turn produced concrete discovery evidence."""
-    if not isinstance(tool, (Action, Check)):
-        return []
-    actor = state.characters.get(actor_id)
-    if not actor:
-        return []
-    evidence_markers = (
-        " learns:",
-        " finds ",
-        " found ",
-        " discovers ",
-        " reveals ",
-        " picks up ",
-    )
-    has_evidence = any(
-        actor_id in event.characters
-        and not _FAILED_ATTEMPT_PATTERN.search(event.text.casefold())
-        and any(marker in f" {event.text.lower()} " for marker in evidence_markers)
-        for event in events
-    )
-    if not has_evidence:
-        return []
-
-    location_name = actor.location.replace("-", " ").lower()
-    results: list[str] = []
-    for quest in state.quests.values():
-        if quest.owner != actor_id or quest.status.lower() in {"completed", "failed"}:
-            continue
-        if quest.current_step != steps_before.get(
-            quest.id
-        ) or quest.current_step >= len(quest.plan):
-            continue
-        objective = quest.plan[quest.current_step].replace("-", " ").lower()
-        search_objective = any(
-            verb in objective
-            for verb in ("search", "investigate", "examine", "find clues")
-        )
-        if search_objective and location_name in objective:
-            if quest.current_step == len(
-                quest.plan
-            ) - 1 and not _can_advance_final_objective(quest, tool, events):
-                continue
-            results.append(WorldOperations(state).advance_quest(quest.id, advance=True))
-    return results
-
-
-def _complete_resolved_final_objective(
-    state: WorldState,
-    actor_id: str,
-    tool: CharacterTool,
-    events: list[HistoryEvent],
-) -> list[str]:
-    """Complete planned quests when their owner directly resolves the final objective early."""
-    results: list[str] = []
-    for quest in state.quests.values():
-        if (
-            quest.owner != actor_id
-            or quest.status.casefold() in {"completed", "failed"}
-            or not quest.plan
-            or quest.current_step >= len(quest.plan)
-        ):
-            continue
-
-        final_step = len(quest.plan) - 1
-        final_objective = quest.model_copy(update={"current_step": final_step})
-        if not _can_advance_final_objective(final_objective, tool, events):
-            continue
-
-        skipped = quest.plan[quest.current_step : final_step]
-        quest.steps.extend(
-            f"{objective} — bypassed by direct resolution" for objective in skipped
-        )
-        quest.current_step = final_step
-        results.append(
-            WorldOperations(state).advance_quest(
-                quest.id,
-                advance=True,
-                step="resolved directly",
-            )
-        )
-    return results
+    target = getattr(tool, "target", None) or getattr(tool, "opponent", None)
+    involved = {c for event in events for c in event.characters}
+    if resolved := resolve_character(state, target):
+        involved.add(resolved.id)
+    if expected and not expected & involved:
+        return "named_person_absent"
+    if quest.id in advanced:
+        return "one_step_per_tick"
+    if (
+        quest.current_step
+        and state.time - quest.last_progress < MIN_TICKS_BETWEEN_ADVANCES
+    ):
+        return "too_soon"
+    return None
 
 
 def _record_resolution_if_needed(
@@ -1128,9 +632,6 @@ async def tick(
     replay: ReplayTape | None = None,
 ) -> bool:
     actor_id = _pick_next_actor(state, active_pc_id, tick_index)
-    quest_steps_before = {
-        quest.id: quest.current_step for quest in state.quests.values()
-    }
 
     controller = pc_controller if actor_id == active_pc_id else None
     intent = await flow_agent_turn(actor_id, state, logger, controller, replay)
@@ -1143,6 +644,11 @@ async def tick(
 
     # 1. Resolve the turn.
     pre = len(state.history)
+    legs = (
+        len(route(state, state.characters[actor_id].location, intent.destination) or [])
+        if isinstance(intent, Travel)
+        else 1
+    )
     if replay and replay.is_playback and isinstance(intent, (Action, Check)):
         resolution = replay.action_resolution(actor_id, state)
     else:
@@ -1156,7 +662,7 @@ async def tick(
     event_minutes = [max(0, minutes) for minutes in dm.minutes[: len(new_events)]]
     event_minutes.extend([0] * (len(new_events) - len(event_minutes)))
     if event_minutes:
-        event_minutes[0] = max(event_minutes[0], _minimum_action_minutes(intent))
+        event_minutes[0] = max(event_minutes[0], _minimum_action_minutes(intent, legs))
     for index, event in enumerate(new_events[1:], start=1):
         # Later knowledge events describe the result of the primary action or
         # its optional memory update; they must not charge for that time twice.
@@ -1203,6 +709,7 @@ async def tick(
 
     # 2c. Review quests. Step-level progress; may append XP events via advance_quest.
     pre_quest = len(state.history)
+    advanced: set[str] = set()
     for update in dm.modifies:
         if (
             update.action == "advance_faction_clock"
@@ -1232,31 +739,26 @@ async def tick(
                 f"  [world] {update.target_id}: cannot remove the active player character."
             )
             continue
-        quest_key = next(
-            (
-                candidate
-                for candidate in state.quests
-                if slugify(candidate) == slugify(update.target_id)
-            ),
-            None,
+        quest = (
+            find_quest(state, update.target_id)
+            if update.action == "update_quest"
+            else None
         )
-        quest = state.quests.get(quest_key) if quest_key else None
-        is_final_status = update.status and update.status.casefold() == "completed"
+        claims_progress = update.advance or update.status == "completed"
         if (
-            update.action == "update_quest"
-            and (update.advance or is_final_status)
-            and quest
+            quest
             and quest.status == "active"
-            and (
-                guard := _objective_veto(state, quest, intent, new_events, update.step)
-            )
+            and claims_progress
+            and (guard := _quest_veto(state, quest, intent, new_events, advanced))
         ):
-            print(f"  [quest] {update.target_id}: vetoed by guard '{guard}'.")
+            print(f"  [quest] {quest.id}: vetoed by guard '{guard}'.")
             logger.log_event(
                 "quest_advance_vetoed",
                 guard=guard,
                 quest=quest.id,
-                objective=quest.plan[quest.current_step] if quest.plan else None,
+                objective=quest.plan[quest.current_step]
+                if quest.current_step < len(quest.plan)
+                else None,
                 claim=update.step,
                 status=update.status,
                 actor=intent.actor,
@@ -1265,13 +767,9 @@ async def tick(
             )
             continue
         msg = await resolve(update, state, logger=logger)
+        if quest and claims_progress:
+            advanced.add(quest.id)
         print(f"  [quest] {update.target_id}: {msg}")
-    for msg in _advance_grounded_objective(
-        state, actor_id, intent, new_events, quest_steps_before
-    ):
-        print(f"  [quest] grounded fallback: {msg}")
-    for msg in _complete_resolved_final_objective(state, actor_id, intent, new_events):
-        print(f"  [quest] final resolution: {msg}")
     for event in state.history[pre_quest:]:
         print(f"  {event.text}")
 

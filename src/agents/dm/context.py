@@ -1,6 +1,11 @@
 """DM prompt builders."""
 
-from src.engine.state import WorldState, live_factions, nearby_location_ids
+from src.engine.state import (
+    WorldState,
+    live_factions,
+    nearby_location_ids,
+    objective_routes,
+)
 from src.agents.utils import render
 
 _RECENT_ENDED_QUESTS = 5
@@ -57,6 +62,7 @@ def director_system() -> str:
 def director_context(deps) -> str:
     state: WorldState = deps.state
     scene = state.locations.get(deps.location_id)
+    hero = state.characters.get(state.protagonist)
     recent_events = [e.text for e in state.history[-10:]]
     quests = [
         q
@@ -77,4 +83,14 @@ def director_context(deps) -> str:
         scene=scene,
         present=present,
         factions=live_factions(state),
+        hero=hero,
+        objective=next(
+            (
+                q.plan[q.current_step]
+                for q in quests
+                if hero and q.owner == hero.id and q.current_step < len(q.plan)
+            ),
+            None,
+        ),
+        objective_routes=objective_routes(state, hero) if hero else [],
     )

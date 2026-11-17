@@ -10,11 +10,13 @@ from src.engine.state import (
     WorldState,
     characters_in_location,
     connected_location_ids,
+    objective_routes,
     resolve_character,
     resolve_location_id,
+    route,
     slugify,
 )
-from src.agents.utils import create_model
+from src.agents.utils import OUTPUT_RETRIES, create_model
 from .context import character_context, character_system
 from .tools import Ability, Action, Attack, CharacterTool, Check, Speak, Travel, Wait
 
@@ -39,7 +41,10 @@ def _living_targets(ctx: RunContext[CharacterDeps]) -> list[str]:
 
 
 def _travel_options(ctx: RunContext[CharacterDeps]) -> list[str]:
-    return connected_location_ids(ctx.deps.state, ctx.deps.char.location)
+    """Exits, then the far places my current objectives name."""
+    char, state = ctx.deps.char, ctx.deps.state
+    far = [place for place, _ in objective_routes(state, char)]
+    return list(dict.fromkeys(connected_location_ids(state, char.location) + far))
 
 
 _DIRECT_INTERACTION_VERBS = (
@@ -251,7 +256,7 @@ def _prepare_output_tools(
                 result.append(
                     replace(
                         td,
-                        description=f"travel to a connected location. Valid ids: {', '.join(options)}.",
+                        description=f"travel to a connected location, or straight to a far known place along the route. Valid ids: {', '.join(options)}.",
                     )
                 )
             else:
@@ -305,9 +310,12 @@ def travel_output(
     remember: str | None = None,
     new_goal: str | None = None,
 ) -> Travel:
-    """travel to a connected location using its exact id."""
+    """travel to a known location using its exact id; far places are reached along the known route."""
     options = _travel_options(ctx)
-    if location not in options:
+    state, here = ctx.deps.state, ctx.deps.char.location
+    if location not in options and not (
+        location in state.locations and route(state, here, location)
+    ):
         hint = (
             f"Valid location ids: {', '.join(options)}."
             if options
@@ -345,8 +353,8 @@ def action_output(
         location_id, action_kind = remote_location
         if action_kind == "movement":
             raise ModelRetry(
-                f"Cannot move to {location_id!r} with action — movement requires canonical travel. "
-                "Use travel when the destination is connected; otherwise discover a route first."
+                f"Cannot move to {location_id!r} with action. Use travel instead; "
+                "it reaches any known place along the route."
             )
         raise ModelRetry(
             f"Cannot interact with {location_id!r} from {ctx.deps.char.location!r} using action. "
@@ -432,6 +440,7 @@ agent: Agent[CharacterDeps, CharacterTool] = Agent(
         ToolOutput(wait_output, name="wait"),
     ],
     prepare_output_tools=_prepare_output_tools,
+    output_retries=OUTPUT_RETRIES,
     instructions="You are a character in a D&D game.",
 )
 

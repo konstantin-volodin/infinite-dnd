@@ -39,9 +39,17 @@ def test_move_character(state, ops):
     assert state.characters["hero"].location == "forest"
     ops.move_character("hero", "cave")
     assert state.characters["hero"].location == "cave"
-    assert "Cannot reach" in ops.move_character(
-        "hero", "tavern"
-    )  # cave only connects to forest
+
+
+def test_move_character_walks_the_shortest_known_route(state, ops):
+    ops.move_character("hero", "forest")
+    ops.move_character("hero", "cave")
+    assert (
+        ops.move_character("hero", "tavern") == "hero travelled via forest to 'tavern'."
+    )
+    assert state.characters["hero"].location == "tavern"
+    state.locations["forest"].connections.remove("cave")
+    assert "no known route" in ops.move_character("hero", "cave")
 
 
 # ============ ITEMS ============
