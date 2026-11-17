@@ -164,3 +164,15 @@ def test_storyteller_context_builds_on_the_ended_quest_and_known_people():
     assert "**old-bram** at road; wants: retire; hero sees them as: mentor" in context
     assert context.count("**stranger-") == 7  # capped with old-bram first
     assert "- road" in context  # gateway
+
+
+def test_report_takes_a_list_sent_as_a_json_string_with_trailing_junk():
+    """Seen live: `plan` arrived as '["a", "b", "c"],\n\n' and cost a retry each time."""
+    from pydantic import TypeAdapter
+
+    from src.agents.dm.storyteller import _Lenient
+    from typing import Annotated
+
+    plan = TypeAdapter(Annotated[list[str], _Lenient])
+    assert plan.validate_python('["a", "b", "c"],\n\n') == ["a", "b", "c"]
+    assert plan.validate_python(["a"]) == ["a"]

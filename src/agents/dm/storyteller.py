@@ -6,9 +6,11 @@ only writer and goes through WorldOperations; the output tool dry-runs it on a
 copy so the model gets the structural errors back as a retry.
 """
 
+import json
 from dataclasses import dataclass
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
 
 from src.agents.utils import OUTPUT_RETRIES, create_model, render
@@ -23,6 +25,19 @@ from src.engine.state import (
 
 ARC_DEADLINE_HOURS = 12  # in-world hours before an arc's faction completes its plan
 _CONTEXT_PEOPLE = 8
+
+
+def _first_json_value(value):
+    """Small models sometimes send a list as a JSON string with junk after it; take the list."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.JSONDecoder().raw_decode(value.strip())[0]
+    except ValueError:
+        return value
+
+
+_Lenient = BeforeValidator(_first_json_value)
 
 
 class Place(BaseModel):
@@ -126,11 +141,11 @@ def apply_arc(state: WorldState, arc: Arc) -> list[str]:
 def report(
     ctx: RunContext[StorytellerDeps],
     hook: str,
-    places: list[Place],
-    people: list[Person],
+    places: Annotated[list[Place], _Lenient],
+    people: Annotated[list[Person], _Lenient],
     quest_title: str,
     quest_description: str,
-    plan: list[str],
+    plan: Annotated[list[str], _Lenient],
     faction_name: str = "",
     faction_goal: str = "",
     deadline_consequence: str = "",
