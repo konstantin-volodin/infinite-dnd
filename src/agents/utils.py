@@ -44,7 +44,7 @@ class _DropEmptyReplies(WrapperModel):
         return await super().request(kept, model_settings, model_request_parameters)
 
 
-def create_model() -> Model:
+def create_model(model_env: str = "LLM_MODEL") -> Model:
     """Create a Model from environment variables.
 
     LLM_PROVIDER=anthropic uses the Claude API (ANTHROPIC_API_KEY); "openai"
@@ -72,7 +72,7 @@ def create_model() -> Model:
         )
     return _DropEmptyReplies(
         OpenAIChatModel(
-            os.getenv("LLM_MODEL", ""),
+            os.getenv(model_env) or os.getenv("LLM_MODEL", ""),
             provider=OpenAIProvider(
                 base_url=os.getenv("LLM_BASE_URL", "http://localhost:1234/v1"),
                 api_key=os.getenv("LLM_API_KEY", "not-needed"),

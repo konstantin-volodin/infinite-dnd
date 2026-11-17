@@ -26,6 +26,7 @@ AI-driven D&D engine where LLM agents run tabletop RPG sessions autonomously.
 `LLM_PROVIDER=ollama LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=<model>`.
 Give the model at least a 12k context (`PARAMETER num_ctx 12288` in a Modelfile);
 Ollama's 4k default truncates the prompts.
+Set `LLM_NARRATOR_MODEL=<model>` to write the prose chapters with a different model than the one playing the game.
 
 ### ⚡ Running stuff
 - `infinite-dnd` - runs the game

@@ -13,7 +13,11 @@ from src.agents.utils import create_model
 from src.engine.state import WorldState
 from src.engine.state.models import HistoryEvent
 
-agent: Agent[None, str] = Agent(model=create_model(), output_type=str)
+# The narrator may use its own model (LLM_NARRATOR_MODEL): the best storyteller that
+# fits a small GPU is not always the best at the game's tool calls.
+agent: Agent[None, str] = Agent(
+    model=create_model("LLM_NARRATOR_MODEL"), output_type=str
+)
 
 CHAPTER_INSTRUCTIONS = """\
 You are the narrator of a fantasy serial, writing one chapter at a time from the game \

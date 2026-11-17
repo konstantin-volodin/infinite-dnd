@@ -130,3 +130,14 @@ def test_empty_reply_is_retried_without_a_null_assistant_message(monkeypatch):
     asyncio.run(run())
     assert len(requests) == 2
     assert all(m.get("content") is not None for m in requests[1]["messages"])
+
+
+def test_model_name_can_come_from_another_variable(monkeypatch):
+    """The narrator's own model wins when set, and falls back to LLM_MODEL when not."""
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_MODEL", "driver")
+    monkeypatch.delenv("LLM_NARRATOR_MODEL", raising=False)
+    assert utils.create_model("LLM_NARRATOR_MODEL").model_name == "driver"
+    monkeypatch.setenv("LLM_NARRATOR_MODEL", "narrator")
+    assert utils.create_model("LLM_NARRATOR_MODEL").model_name == "narrator"
+    assert utils.create_model().model_name == "driver"
