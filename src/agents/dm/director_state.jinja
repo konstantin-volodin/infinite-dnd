@@ -42,6 +42,14 @@ _no prior events._
 {% endfor %}
 {% endif %}
 
+{% if objective %}
+## 🎯 where the story must go
+- {{ hero.id }}'s current objective: **{{ objective }}**
+{% for place, path in objective_routes %}
+- it lies at **{{ place }}**, {{ path|length }} leg{{ 's' if path|length > 1 else '' }} from here. the complication must give {{ hero.id }} an urgent reason to go there now.
+{% endfor %}
+{% endif %}
+
 ## 🎬 scene
 - location: {{ location_id }}
 {% if scene %}
@@ -61,4 +69,4 @@ _no prior events._
 
 ---
 
-Call `report` with exactly one complication grounded in the state above. Use a concrete scene detail or present character's motivation when possible, and leave the characters more than one plausible way to respond.
+Call `report` with exactly one complication that presses on the current objective above. Use a concrete scene detail or present character's motivation when possible, and leave the characters more than one plausible way to respond.

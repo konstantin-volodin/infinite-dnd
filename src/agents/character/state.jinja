@@ -2,6 +2,9 @@
 
 ## 🎯 current goal
 - **goal:** {{ char.goal or 'none' }}
+{% for place, path in objective_routes %}
+- ⚠️ **my quest cannot move until I am at {{ place }}** — {{ path|length }} leg{{ 's' if path|length > 1 else '' }} away{% if path|length > 1 %} (via {{ path[:-1] | join(', ') }}){% endif %}. I should `travel` straight to {{ place }} now.
+{% endfor %}
 
 ## 👥 contacts
 {% if char.relationships %}
@@ -113,7 +116,7 @@ Everything is calm... for now.
 {% else %}
 - **valid `speak.target` ids right now:** none, so leave `target` empty if I speak
 {% endif %}
-- for `travel.location`, use one of the connected places listed above under **about my location**
+- for `travel.location`, use a connected place listed under **about my location**, or the place my current objective needs
 - **use `action`** to search, inspect, interact with features/items, or attempt something concrete tied to my goal.
 - never use `action` to move to a known different location; use `travel` so the world records the movement.
 - never use `action` to search, examine, or otherwise interact with a known different location; travel there first.

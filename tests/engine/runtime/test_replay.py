@@ -233,3 +233,140 @@ def test_travel_time_floor_applies_when_recorded_dm_underestimates(tmp_path):
     assert state.history[-1].minutes_elapsed == 10
     assert state.minutes_elapsed == 10
     playback.assert_consumed()
+
+
+def test_skipped_tick_replaces_its_partial_outputs_on_the_tape(tmp_path):
+    path = tmp_path / "run.jsonl"
+    tape = ReplayTape.recording(path)
+    tape.character("hero", Wait(actor="hero"))
+    mark = tape.mark()
+    tape.character("hero", Speak(actor="hero", message="half a tick"))
+    tape.skip(mark)
+    tape.character("hero", Wait(actor="hero"))
+
+    playback = ReplayTape.playback(path)
+    assert not playback.skipped()
+    assert playback.character("hero") == Wait(actor="hero")
+    assert playback.skipped()
+    assert playback.character("hero") == Wait(actor="hero")
+    playback.assert_consumed()
+
+
+class _Result:
+    def __init__(self, output):
+        self.output = output
+
+    def all_messages(self):
+        return []
+
+
+def test_endless_run_with_a_skipped_tick_and_a_new_arc_replays_identically(
+    tmp_path, monkeypatch
+):
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    from src.agents.dm.storyteller import Arc, Person, Place
+    from src.engine.runtime.loop import _run_game
+    from src.engine.state import StateManager
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setattr("src.engine.runtime.loop.FAILED_TICK_BACKOFF_S", 0)
+    calls = {"character": 0, "dm": 0}
+
+    async def character(*_args, deps, **_kwargs):
+        calls["character"] += 1
+        if calls["character"] == 2:
+            raise UnexpectedModelBehavior("Exceeded maximum retries (1)")
+        return _Result(Wait(actor=deps.char.id))
+
+    async def dm(*_args, deps, **_kwargs):
+        calls["dm"] += 1
+        fail = Modify(
+            action="update_quest", target_id="find-the-circlet", status="failed"
+        )
+        return _Result(
+            DMResult(
+                creates=[],
+                modifies=[fail] if calls["dm"] == 1 else [],
+                minutes=[5] * len(deps.new_events),
+            )
+        )
+
+    async def storyteller(*_args, **_kwargs):
+        return _Result(
+            Arc(
+                hook="A crow brings a letter from Hollowmere.",
+                places=[
+                    Place(name="Hollowmere Gate", connects_to="manor-foyer"),
+                    Place(name="Hollowmere Crypt", connects_to="Hollowmere Gate"),
+                ],
+                people=[Person(name="Sexton Abel", goal="bury the truth")],
+                quest_title="The Crow's Letter",
+                quest_description="Learn who sent the crow.",
+                plan=[
+                    "question Sexton Abel at Hollowmere Gate",
+                    "search the Hollowmere Crypt",
+                    "unmask the sender",
+                ],
+            )
+        )
+
+    agents = (
+        "loop.character_agent.run",
+        "loop.dm_agent.run",
+        "campaign.storyteller_agent.run",
+    )
+    for target, fake in zip(agents, (character, dm, storyteller)):
+        monkeypatch.setattr(f"src.engine.runtime.{target}", fake)
+    tape = tmp_path / "tape.jsonl"
+    asyncio.run(
+        _run_game("cursed-heirloom", None, 4, None, replay=ReplayTape.recording(tape))
+    )
+    assert '"kind": "skip"' in tape.read_text()
+    assert '"kind": "arc"' in tape.read_text()
+
+    async def unexpected(*_args, **_kwargs):
+        raise AssertionError("an LLM agent was called during replay")
+
+    for target in agents:
+        monkeypatch.setattr(f"src.engine.runtime.{target}", unexpected)
+    asyncio.run(
+        _run_game("cursed-heirloom", None, 4, None, replay=ReplayTape.playback(tape))
+    )
+
+    recorded, replayed = sorted(
+        (tmp_path / "world-state" / "cursed-heirloom").iterdir(),
+        key=lambda path: path.stat().st_mtime,
+    )
+    final = "world_state_4.json"
+    assert (recorded / final).read_text() == (replayed / final).read_text()
+    state = StateManager("cursed-heirloom", run_id=replayed.name).load_state(final)
+    assert state.quests["the-crows-letter"].status == "active"
+    assert "hollowmere-gate" in state.locations["manor-foyer"].connections
+
+
+def test_director_cannot_add_a_group_as_a_character(tmp_path):
+    """Seen live: a 'patrol-crew' took turns and spoke like one person."""
+    path = tmp_path / "run.jsonl"
+    tape = ReplayTape.recording(path)
+    tape.director(
+        DirectorResult(
+            event="A patrol crew descends the steps.",
+            create=Create(type="npc", name="Patrol Crew", location="tavern"),
+        )
+    )
+    tape.director(
+        DirectorResult(
+            event="A lone sergeant follows.",
+            create=Create(type="npc", name="Sergeant Bram", location="tavern"),
+        )
+    )
+    state = _state()
+    playback = ReplayTape.playback(path)
+    asyncio.run(flow_director(state, "tavern", _Logger(), playback))
+    asyncio.run(flow_director(state, "tavern", _Logger(), playback))
+
+    assert "patrol-crew" not in state.characters
+    assert "sergeant-bram" in state.characters
+    assert "A patrol crew descends the steps." in [e.text for e in state.history]

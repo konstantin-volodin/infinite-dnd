@@ -1,7 +1,27 @@
 """DM prompt builders."""
 
-from src.engine.state import WorldState
+from src.engine.state import (
+    WorldState,
+    live_factions,
+    nearby_location_ids,
+    objective_routes,
+)
 from src.agents.utils import render
+
+_RECENT_ENDED_QUESTS = 5
+
+
+def _scene_catalogue(state: WorldState) -> tuple[list[str], list[str], list[str]]:
+    """Location, character, and item ids near the protagonist — bounded as the world grows."""
+    hero = state.characters.get(state.protagonist)
+    location_ids = (
+        nearby_location_ids(state, [hero.location]) if hero else list(state.locations)
+    )
+    characters = [c for c in state.characters.values() if c.location in location_ids]
+    items = {item for lid in location_ids for item in state.locations[lid].items} | {
+        item for c in characters for item in c.inventory
+    }
+    return sorted(location_ids), sorted(c.id for c in characters), sorted(items)
 
 
 def dm_system() -> str:
@@ -10,13 +30,12 @@ def dm_system() -> str:
 
 def dm_context(deps) -> str:
     state: WorldState = deps.state
-    location_ids = sorted(state.locations.keys())
-    character_ids = sorted(state.characters.keys())
-    item_ids = sorted(
-        {item for loc in state.locations.values() for item in loc.items}
-        | {item for char in state.characters.values() for item in char.inventory}
+    location_ids, character_ids, item_ids = _scene_catalogue(state)
+    ended = [qid for qid, q in state.quests.items() if q.status != "active"]
+    quest_ids = sorted(
+        [qid for qid, q in state.quests.items() if q.status == "active"]
+        + ended[-_RECENT_ENDED_QUESTS:]
     )
-    quest_ids = sorted(state.quests.keys())
     quests = [
         q
         for q in state.quests.values()
@@ -24,7 +43,7 @@ def dm_context(deps) -> str:
     ]
     return render(
         "dm/state.jinja",
-        chronicle=state.chronicle[-3:],
+        chronicle=state.chronicle,
         context_events=deps.context_events,
         new_events=deps.new_events,
         location_ids=location_ids,
@@ -32,7 +51,7 @@ def dm_context(deps) -> str:
         item_ids=item_ids,
         quest_ids=quest_ids,
         quests=quests,
-        factions=[state.factions[fid] for fid in sorted(state.factions)],
+        factions=live_factions(state),
     )
 
 
@@ -43,6 +62,7 @@ def director_system() -> str:
 def director_context(deps) -> str:
     state: WorldState = deps.state
     scene = state.locations.get(deps.location_id)
+    hero = state.characters.get(state.protagonist)
     recent_events = [e.text for e in state.history[-10:]]
     quests = [
         q
@@ -55,12 +75,22 @@ def director_context(deps) -> str:
     )
     return render(
         "dm/director_state.jinja",
-        chronicle=state.chronicle[-3:],
+        chronicle=state.chronicle,
         recent_events=recent_events,
         quests=quests,
         interventions=state.director_interventions,
         location_id=deps.location_id,
         scene=scene,
         present=present,
-        factions=[state.factions[fid] for fid in sorted(state.factions)],
+        factions=live_factions(state),
+        hero=hero,
+        objective=next(
+            (
+                q.plan[q.current_step]
+                for q in quests
+                if hero and q.owner == hero.id and q.current_step < len(q.plan)
+            ),
+            None,
+        ),
+        objective_routes=objective_routes(state, hero) if hero else [],
     )

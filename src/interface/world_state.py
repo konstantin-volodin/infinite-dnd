@@ -94,10 +94,10 @@ def load_view(
             f"No snapshot for tick {tick} in scenario '{scenario}' run '{run_id}'"
         )
 
-    state = _read_snapshot(run_path, tick)
+    state = read_snapshot(run_path, tick)
     tick_index = ticks.index(tick)
     prev_state = (
-        _read_snapshot(run_path, ticks[tick_index - 1]) if tick_index > 0 else None
+        read_snapshot(run_path, ticks[tick_index - 1]) if tick_index > 0 else None
     )
     manifest = _safe_manifest(scenario)
 
@@ -105,7 +105,8 @@ def load_view(
         "scenario": scenario,
         "run_id": run_id,
         "title": manifest.get("title", scenario),
-        "pc": manifest.get("pc"),
+        # A successor may have taken over; older snapshots predate the field.
+        "pc": state.get("protagonist") or manifest.get("pc"),
         "tick": tick,
         "ticks": ticks,
         "latest_tick": ticks[-1],
@@ -122,7 +123,7 @@ def load_series(
     run_path = Path(state_dir) / scenario / run_id
     result: dict[str, list[dict[str, int]]] = {}
     for tick in list_ticks(run_path):
-        snapshot = _read_snapshot(run_path, tick)
+        snapshot = read_snapshot(run_path, tick)
         for character_id, character in snapshot.get("characters", {}).items():
             stats = character.get("stats", {})
             result.setdefault(character_id, []).append(
@@ -136,7 +137,7 @@ def load_series(
     return result
 
 
-def _read_snapshot(run_path: Path, tick: int) -> dict[str, Any]:
+def read_snapshot(run_path: Path, tick: int) -> dict[str, Any]:
     with (run_path / f"world_state_{tick}.json").open("r", encoding="utf-8") as handle:
         return json.load(handle)
 

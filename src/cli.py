@@ -61,7 +61,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="turns",
         type=int,
         default=50,
-        help="Max turns to run.",
+        help="Turns to run; 0 runs until interrupted (Ctrl-C saves and exits; continue with --resume).",
     )
     parser.add_argument(
         "--new-character",

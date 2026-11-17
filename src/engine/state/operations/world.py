@@ -8,6 +8,7 @@ from src.engine.state.models import Character, Location, Quest
 from src.engine.state.operations._base import _OpsBase
 from src.engine.state.queries import (
     character_ids_match,
+    find_quest,
     resolve_character,
     resolve_location_id,
     slugify,
@@ -174,25 +175,10 @@ class WorldOps(_OpsBase):
         step: str | None = None,
         advance: bool = False,
     ) -> str:
-        quest_key = next(
-            (
-                candidate
-                for candidate in self.state.quests
-                if slugify(candidate) == slugify(quest_id)
-            ),
-            None,
-        )
-        if quest_key is None:
-            title_matches = [
-                candidate
-                for candidate, quest in self.state.quests.items()
-                if slugify(quest.title) == slugify(quest_id)
-            ]
-            quest_key = title_matches[0] if len(title_matches) == 1 else quest_id
-        quest = self.state.quests.get(quest_key)
+        quest = find_quest(self.state, quest_id)
         if not quest:
             return f"Cannot advance quest — '{quest_id}' not found."
-        quest_id = quest_key
+        quest_id = quest.id
         if quest.status.lower() in _TERMINAL_QUEST_STATUSES:
             return f"Cannot advance quest — '{quest_id}' is already {quest.status.lower()}."
         normalized_status = (
@@ -237,6 +223,7 @@ class WorldOps(_OpsBase):
             )
             quest.steps.append(note)
             quest.current_step += 1
+            quest.last_progress = self.state.time
             awarded_step = True
             if (
                 quest.plan
@@ -311,6 +298,7 @@ class WorldOps(_OpsBase):
             description=description,
             owner=owner_id,
             plan=plan or [],
+            last_progress=self.state.time,
         )
         owner_loc = (
             self.state.characters[owner_id].location

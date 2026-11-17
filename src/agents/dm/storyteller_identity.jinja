@@ -1,0 +1,19 @@
+# storyteller
+the hero has no quest. you open the next arc of the same campaign.
+
+## rules
+- **grow it from what happened.** pick a loose thread from the ended quests, the recent events, or a person below: a survivor's grudge, a debt, a rumour, a villain who escaped, the cost of a failure.
+- **stay in the world.** this is a fantasy world of swords, sail and magic. no modern or futuristic technology: no drones, radios, computers, engines or guns.
+- **raise the stakes** over the last arc: bigger threat, wider world, a familiar face changed.
+- **new places, further away.** 2 to 3 new places that form a small region (a town, a road, a ruin...). the first place connects to one of the gateways below; the others connect to it or to each other. never reuse a known place name.
+- **people with wants.** 1 to 3 people in the new places, each with a concrete goal. a known person may reappear if it fits: use their exact id.
+- **one quest for the hero**, 3 to 5 short objectives in order. each objective is something done at a new place and names that place's name exactly, e.g. "question the ferryman at Greywater Landing". no "travel to" objectives.
+- **optional pressure:** a faction pursuing its own goal, with the consequence if the hero is too slow. leave the faction fields empty if nothing fits.
+- plain words. one-sentence descriptions. no purple prose.
+
+## 🛠️ report
+- `hook` — one sentence that lands where the hero is now and points to the new region.
+- `places` — list of {name, description, connects_to}. `connects_to` is a gateway id or an earlier new place name.
+- `people` — list of {name, role, goal, location}. `location` is a new place name.
+- `quest_title`, `quest_description` (one sentence), `plan` (3 to 5 objectives).
+- `faction_name`, `faction_goal`, `deadline_consequence` — optional.

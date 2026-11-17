@@ -74,6 +74,9 @@ class Quest(BaseModel):
     steps: List[str] = Field(
         default_factory=list
     )  # progress log — accomplished objectives + notes
+    last_progress: int = Field(
+        default=0, ge=0
+    )  # tick the quest was opened or last advanced — forced-progress bound
 
     @model_validator(mode="after")
     def status_is_canonical(self) -> "Quest":
@@ -152,6 +155,9 @@ class Faction(BaseModel):
 
 class WorldState(BaseModel):
     time: int = Field(default=0, ge=0)
+    protagonist: str = (
+        ""  # the hero the campaign follows; a successor replaces them on death
+    )
     minutes_elapsed: int = Field(default=0, ge=0)
     last_quest_advance_time: int = Field(
         default=0, ge=0

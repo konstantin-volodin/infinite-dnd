@@ -37,3 +37,11 @@ def test_director_output_nameless_entity_filtered():
     entity = NewEntity(type="item", name="   ")
     result = director_output(None, event="Something shifts in the dark.", entity=entity)  # type: ignore[arg-type]
     assert result.create is None
+
+
+def test_entity_sent_as_json_text_is_accepted():
+    """Seen live: the local model passes `entity` as a JSON string, every retry."""
+    entity = NewEntity.model_validate(
+        '{"type": "npc", "name": "Villager", "location": "dock"}'
+    )
+    assert (entity.type, entity.name, entity.location) == ("npc", "Villager", "dock")

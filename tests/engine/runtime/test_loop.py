@@ -5,20 +5,18 @@ from src.interface.session_log import Logger
 import pytest
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
 
-from src.agents.character.tools import Action, Attack, Speak, Travel, Wait
+from src.agents.character.tools import Action, Attack, Check, Speak, Travel, Wait
 from src.engine.runtime.loop import (
+    MAX_FAILED_TICKS,
+    MIN_TICKS_BETWEEN_ADVANCES,
     _STALL_QUIET_TICKS,
-    _advance_grounded_objective,
     _can_accelerate_faction_clock,
     _can_anchor_new_location,
     _can_anchor_new_npc,
-    _can_advance_final_objective,
-    _can_advance_objective,
-    _campaign_outcome,
-    _complete_resolved_final_objective,
     _is_stalled,
     _minimum_action_minutes,
     _pick_next_actor,
+    _quest_veto,
     _record_intervention,
     _record_resolution_if_needed,
     _run_game,
@@ -525,12 +523,35 @@ def test_scene_scheduler_prioritizes_a_directly_addressed_npc_reply():
     state.characters["calla"] = Character(id="calla", location="tavern")
     WorldOperations(state).speak("hero", "What did you find?", "calla")
 
-    # Tick 8 would otherwise rotate back to the PC: 8 % 2 == 0.
-    assert _pick_next_actor(state, "hero", 8) == "calla"
+    state.characters["keph"] = Character(id="keph", location="tavern", goal="fish")
+    # Tick 11 would otherwise rotate to keph; the hero keeps every even tick.
+    assert _pick_next_actor(state, "hero", 11) == "calla"
+    assert _pick_next_actor(state, "hero", 10) == "hero"
 
     WorldOperations(state).speak("calla", "The lock hides a passage.", "hero")
 
-    assert _pick_next_actor(state, "hero", 9) == "hero"
+    assert _pick_next_actor(state, "hero", 11) == "keph"
+
+
+def test_npcs_addressing_each_other_do_not_starve_the_hero_of_turns():
+    """Seen live: two NPCs answered each other for six ticks straight."""
+    state = _state()
+    for npc in ("calla", "keph"):
+        state.characters[npc] = Character(id=npc, location="tavern", goal="talk")
+    WorldOperations(state).speak("calla", "This crate sails.", "keph")
+
+    assert _pick_next_actor(state, "hero", 0) == "hero"
+
+
+def test_hero_acts_every_other_tick_in_a_crowded_scene():
+    """Seen live: four NPCs in the scene left the hero one turn in five."""
+    state = _state()
+    for npc in ("calla", "keph", "marin"):
+        state.characters[npc] = Character(id=npc, location="tavern", goal="talk")
+
+    turns = [_pick_next_actor(state, "hero", tick) for tick in range(6)]
+
+    assert turns == ["hero", "calla", "hero", "keph", "hero", "marin"]
 
 
 # ============ STALL DETECTION ============
@@ -757,756 +778,6 @@ def test_faction_lookout_noticing_actor_can_accelerate_clock():
         "retaliation",
         [event],
     )
-
-
-def test_final_objective_requires_an_active_resolution_attempt():
-    quest = _state().quests["q1"]
-    quest.current_step = len(quest.plan) - 1
-
-    assert not _can_advance_final_objective(
-        quest, Travel(actor="hero", destination="cave")
-    )
-    assert not _can_advance_final_objective(quest, Wait(actor="hero"))
-    assert not _can_advance_final_objective(
-        quest, Action(actor="ally", description="clear the cave")
-    )
-    assert not _can_advance_final_objective(
-        quest, Action(actor="hero", description="clear the cave")
-    )
-    assert _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="clear the cave"),
-        [_event("hero cleared the cave.")],
-    )
-    quest.plan[-1] = "report the smugglers"
-    assert _can_advance_final_objective(
-        quest,
-        Speak(actor="hero", message="I report the smugglers."),
-        [_event("hero reported the smugglers.")],
-    )
-
-
-def test_intermediate_objective_requires_relevant_owner_attempt():
-    state = _state()
-    quest = state.quests["q1"]
-    quest.plan = ["question the tavern patrons about the cave", "clear the cave"]
-
-    relevant_event = _event("hero learns: a patron saw torchlight near the cave.")
-    assert _can_advance_objective(
-        state,
-        quest,
-        Speak(actor="hero", target="patron", message="What did you see near the cave?"),
-        [relevant_event],
-    )
-    assert not _can_advance_objective(
-        state,
-        quest,
-        Travel(actor="hero", destination="cave"),
-        [_event("hero moved to 'cave'.")],
-    )
-    assert not _can_advance_objective(
-        state,
-        quest,
-        Action(actor="hero", description="search the cellar for supplies"),
-        [_event("hero finds a coil of rope in the cellar.")],
-    )
-    assert not _can_advance_objective(
-        state,
-        quest,
-        Speak(actor="hero", target="patron", message="What did you see near the cave?"),
-        [_event("hero finds no useful information from the patron.")],
-    )
-
-
-def test_dialogue_objective_requires_a_dialogue_attempt():
-    state = _state()
-    quest = state.quests["q1"]
-    quest.plan = ["question the servants about the circlet", "recover the circlet"]
-    roster = _event("hero learns: The servants are Kae, Marta, Thorne, and Colm.")
-
-    assert not _can_advance_objective(
-        state,
-        quest,
-        Action(
-            actor="hero",
-            description="inspect the servants' roster to see who might know about the circlet",
-        ),
-        [roster],
-    )
-    assert _can_advance_objective(
-        state,
-        quest,
-        Action(actor="hero", description="ask the gathered servants about the circlet"),
-        [_event("hero learns: Marta saw the circlet in the upper library.")],
-    )
-
-
-def test_dialogue_objective_requires_the_message_to_name_a_quest_topic():
-    state = _state()
-    state.locations["servants-quarters"] = Location(id="servants-quarters")
-    state.characters["hero"].location = "servants-quarters"
-    state.characters["marta"] = Character(
-        id="marta",
-        role="laundress",
-        location="servants-quarters",
-    )
-    quest = state.quests["q1"]
-    quest.title = "The Oak Circlet"
-    quest.description = "Recover the Thorne family's Oak Circlet before dawn."
-    quest.plan = ["question the servants about the circlet", "recover the circlet"]
-
-    def speech(message: str) -> tuple[Speak, list[HistoryEvent]]:
-        return (
-            Speak(actor="hero", target="marta", message=message),
-            [
-                HistoryEvent(
-                    text=f'hero says to marta: "{message}"',
-                    location="servants-quarters",
-                    characters=["hero", "marta"],
-                )
-            ],
-        )
-
-    unrelated_tool, unrelated_events = speech("How is the weather?")
-    assert not _can_advance_objective(state, quest, unrelated_tool, unrelated_events)
-
-    relevant_tool, relevant_events = speech(
-        "The Oak Circlet is missing. Have you noticed anything unusual?"
-    )
-    assert _can_advance_objective(state, quest, relevant_tool, relevant_events)
-
-
-def test_relevant_npc_reply_can_complete_the_owners_dialogue_objective():
-    state = _state()
-    state.characters["calla"] = Character(
-        id="calla",
-        role="scullion",
-        location="tavern",
-    )
-    quest = state.quests["q1"]
-    quest.title = "Investigate the Vault"
-    quest.description = "Learn what Calla knows about the vault behind the cold hearth."
-    quest.plan = [
-        "determine what Calla knows and her motives",
-        "decide whether to investigate the vault",
-    ]
-    question = HistoryEvent(
-        text=(
-            'hero says to calla: "What do you know about the vault behind the '
-            'cold hearth, and why are you looking for it?"'
-        ),
-        location="tavern",
-        characters=["hero", "calla"],
-    )
-    reply = HistoryEvent(
-        text=(
-            'calla says to hero: "I have heard it is hidden behind the cold hearth. '
-            'I want to learn what the vault contains."'
-        ),
-        location="tavern",
-        characters=["calla", "hero"],
-    )
-    state.history = [question, reply]
-
-    assert _can_advance_objective(
-        state,
-        quest,
-        Speak(
-            actor="calla",
-            target="hero",
-            message=(
-                "I have heard it is hidden behind the cold hearth. "
-                "I want to learn what the vault contains."
-            ),
-        ),
-        [reply],
-    )
-
-
-def test_npc_reply_requires_a_relevant_owner_question_and_relevant_answer():
-    state = _state()
-    state.characters["calla"] = Character(id="calla", location="tavern")
-    quest = state.quests["q1"]
-    quest.title = "Investigate the Vault"
-    quest.description = "Learn what Calla knows about the vault behind the cold hearth."
-    quest.plan = [
-        "determine what Calla knows and her motives",
-        "decide whether to investigate the vault",
-    ]
-    reply_tool = Speak(
-        actor="calla",
-        target="hero",
-        message="I heard the vault is hidden behind the cold hearth.",
-    )
-    reply = HistoryEvent(
-        text='calla says to hero: "I heard the vault is hidden behind the cold hearth."',
-        location="tavern",
-        characters=["calla", "hero"],
-    )
-    unrelated_question = HistoryEvent(
-        text='hero says to calla: "How is the weather?"',
-        location="tavern",
-        characters=["hero", "calla"],
-    )
-    state.history = [unrelated_question, reply]
-
-    assert not _can_advance_objective(state, quest, reply_tool, [reply])
-
-    relevant_question = HistoryEvent(
-        text='hero says to calla: "What do you know about the vault behind the cold hearth?"',
-        location="tavern",
-        characters=["hero", "calla"],
-    )
-    unrelated_reply = HistoryEvent(
-        text='calla says to hero: "The weather has been miserable all week."',
-        location="tavern",
-        characters=["calla", "hero"],
-    )
-    state.history = [relevant_question, unrelated_reply]
-
-    assert not _can_advance_objective(
-        state,
-        quest,
-        Speak(
-            actor="calla",
-            target="hero",
-            message="The weather has been miserable all week.",
-        ),
-        [unrelated_reply],
-    )
-
-    progress = HistoryEvent(
-        text="hero earns 10 XP (quest 'q1' progress).",
-        location="tavern",
-        characters=["hero"],
-    )
-    state.history = [relevant_question, progress, reply]
-
-    assert not _can_advance_objective(state, quest, reply_tool, [reply])
-
-
-def test_tick_advances_dialogue_objective_from_the_addressed_npcs_reply(monkeypatch):
-    state = _state()
-    state.characters["calla"] = Character(
-        id="calla",
-        role="scullion",
-        location="tavern",
-    )
-    quest = state.quests["q1"]
-    quest.title = "Investigate the Vault"
-    quest.description = "Learn what Calla knows about the vault behind the cold hearth."
-    quest.plan = [
-        "determine what Calla knows and her motives",
-        "decide whether to investigate the vault",
-    ]
-    state.history = [
-        HistoryEvent(
-            text=(
-                'hero says to calla: "What do you know about the vault behind the '
-                'cold hearth, and why are you looking for it?"'
-            ),
-            location="tavern",
-            characters=["hero", "calla"],
-        )
-    ]
-
-    async def answer_question(*_args):
-        return Speak(
-            actor="calla",
-            target="hero",
-            message=(
-                "I have heard it is hidden behind the cold hearth. "
-                "I want to learn what the vault contains."
-            ),
-        )
-
-    async def report_progress(*_args):
-        return DMResult(
-            creates=[],
-            modifies=[
-                Modify(
-                    action="update_quest",
-                    target_id="q1",
-                    advance=True,
-                    step="Calla revealed what she knows about the vault and why she is seeking it",
-                )
-            ],
-            minutes=[2],
-        )
-
-    monkeypatch.setattr(
-        "src.engine.runtime.loop._pick_next_actor", lambda *_args: "calla"
-    )
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", answer_question)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
-
-    asyncio.run(tick("hero", state, 1, logger=Mock(spec=Logger)))
-
-    assert quest.current_step == 1
-    assert quest.steps == [
-        "determine what Calla knows and her motives — "
-        "Calla revealed what she knows about the vault and why she is seeking it",
-    ]
-    assert state.characters["hero"].stats.xp == 10
-
-
-def test_location_bound_objective_requires_evidence_at_a_named_location():
-    state = _state()
-    state.locations.update(
-        {
-            "guild-hall": Location(id="guild-hall"),
-            "trade-dock": Location(id="trade-dock"),
-        }
-    )
-    quest = state.quests["q1"]
-    quest.plan = [
-        "check the guild-hall ledger for anything unusual",
-        "find the missing guard",
-    ]
-    tool = Action(
-        actor="hero", description="inspect the cargo ledger for unusual shipments"
-    )
-
-    state.characters["hero"].location = "trade-dock"
-    remote_evidence = HistoryEvent(
-        text="hero learns: The cargo ledger lists an unusual private shipment.",
-        location="trade-dock",
-        characters=["hero"],
-    )
-    assert not _can_advance_objective(state, quest, tool, [remote_evidence])
-
-    state.characters["hero"].location = "guild-hall"
-    local_evidence = remote_evidence.model_copy(update={"location": "guild-hall"})
-    assert _can_advance_objective(state, quest, tool, [local_evidence])
-
-
-def test_referential_contact_objective_accepts_a_known_quest_link():
-    state = _state()
-    quest = state.quests["q1"]
-    quest.title = "The Missing Brother"
-    quest.description = "Find clues about the disappearance of Kaelen Swift."
-    quest.plan = ["track down whoever saw him last", "find Kaelen Swift"]
-    state.characters["hero"].knowledge = [
-        "Dockmaster Alan met Kaelen at the bridge on the day he vanished."
-    ]
-    state.characters["dockmaster-alan"] = Character(
-        id="dockmaster-alan", location="tavern"
-    )
-    tool = Speak(
-        actor="hero",
-        target="dockmaster-alan",
-        message="You met my brother Kaelen at the bridge. What happened to him?",
-    )
-    event = HistoryEvent(
-        text='hero says to dockmaster-alan: "You met my brother Kaelen at the bridge. What happened?"',
-        location="tavern",
-        characters=["hero", "dockmaster-alan"],
-    )
-
-    assert _can_advance_objective(state, quest, tool, [event])
-
-
-def test_referential_contact_objective_rejects_an_ungrounded_conversation():
-    state = _state()
-    quest = state.quests["q1"]
-    quest.title = "The Missing Brother"
-    quest.description = "Find clues about the disappearance of Kaelen Swift."
-    quest.plan = ["track down whoever saw him last", "find Kaelen Swift"]
-    state.characters["hero"].knowledge = [
-        "Dockmaster Alan met Kaelen at the bridge on the day he vanished."
-    ]
-    state.characters["dockmaster-alan"] = Character(
-        id="dockmaster-alan", location="tavern"
-    )
-    event = HistoryEvent(
-        text='hero says to dockmaster-alan: "How is the weather?"',
-        location="tavern",
-        characters=["hero", "dockmaster-alan"],
-    )
-
-    unrelated = Speak(
-        actor="hero", target="dockmaster-alan", message="How is the weather?"
-    )
-    assert not _can_advance_objective(state, quest, unrelated, [event])
-
-    related = Speak(
-        actor="hero", target="dockmaster-alan", message="What happened to Kaelen?"
-    )
-    state.characters["hero"].knowledge = ["Dockmaster Alan handles the port's cargo."]
-    assert not _can_advance_objective(state, quest, related, [event])
-
-
-def test_final_objective_rejects_clue_discovery_without_resolution_evidence():
-    state = _state()
-    quest = state.quests["q1"]
-    quest.plan[-1] = "recover the lost amulet"
-    quest.current_step = len(quest.plan) - 1
-
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="search the cave for clues"),
-        [_event("hero learns: someone recovered the lost amulet.")],
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="search the cave for clues"),
-        [_event("hero discovers the bandit recovered the lost amulet.")],
-    )
-    assert _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="take the amulet"),
-        [_event("hero picks up the lost amulet.")],
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="take the amulet"),
-        [_event("hero recovered the lost map.")],
-    )
-    quest.plan[-1] = "recover the lost amulet before dawn"
-    assert _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="take the amulet"),
-        [_event("hero recovered the lost amulet.")],
-    )
-
-    quest.plan[-1] = "find the lost amulet"
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="search the cave for clues"),
-        [_event("hero found a clue about the lost amulet.")],
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="search the cave for clues"),
-        [_event("hero found the location of the lost amulet.")],
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="search the cave for clues"),
-        [_event("hero found a trail to the lost amulet.")],
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="search the cave for clues"),
-        [_event("hero found a map leading to the lost amulet.")],
-    )
-    for indirect_event in (
-        "hero found Kaelen's trail.",
-        "hero found the trail of Kaelen.",
-    ):
-        assert not _can_advance_final_objective(
-            quest,
-            Action(actor="hero", description="search the cave for clues"),
-            [_event(indirect_event)],
-        )
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="search the cave for clues"),
-        [_event("hero found evidence about the lost amulet.")],
-    )
-    for indirect_event in (
-        "hero found a theft report about the lost amulet.",
-        "hero found a poster about the lost amulet.",
-        "hero found a rumor about the lost amulet.",
-        "hero found the cave where the lost amulet was last seen.",
-        "hero found the place the lost amulet was last seen.",
-    ):
-        assert not _can_advance_final_objective(
-            quest,
-            Action(actor="hero", description="search the cave for clues"),
-            [_event(indirect_event)],
-        )
-    quest.plan[-1] = "find Kaelen"
-    for indirect_event in (
-        "hero found Kaelen's house.",
-        "hero found the home where Kaelen lives.",
-        "hero found the cave containing Kaelen.",
-        "hero found Kaelen's hiding place.",
-        "hero found the hiding place of Kaelen.",
-        "hero found where Kaelen is hiding.",
-    ):
-        assert not _can_advance_final_objective(
-            quest,
-            Action(actor="hero", description="search the cave for clues"),
-            [_event(indirect_event)],
-        )
-    assert _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="find Kaelen"),
-        [_event("hero found Kaelen at the cave.")],
-    )
-    quest.plan[-1] = "find the lost amulet"
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="search the cave for clues"),
-        [_event("hero found no trace of the lost amulet.")],
-    )
-    assert _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="take the amulet"),
-        [_event("hero found the lost amulet.")],
-    )
-    assert _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="find the amulet"),
-        [_event("hero found the lost amulet, last seen near the river.")],
-    )
-
-
-def test_final_track_objective_requires_direct_target_resolution():
-    quest = _state().quests["q1"]
-    quest.plan[-1] = "track down Kaelen"
-    quest.current_step = len(quest.plan) - 1
-
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="read the notice"),
-        [_event("hero tracked down a clue about Kaelen.")],
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="follow the lead"),
-        [_event("hero tracked down the location of Kaelen at the docks.")],
-    )
-    assert _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="find Kaelen"),
-        [_event("hero tracked down Kaelen at the docks.")],
-    )
-
-
-@pytest.mark.parametrize("quest_id", ["q1", "Q1"])
-def test_tick_rejects_direct_final_completion_from_clue_discovery(
-    monkeypatch, quest_id
-):
-    state = _state()
-    quest = state.quests["q1"]
-    quest.plan[-1] = "find the lost amulet"
-    quest.current_step = len(quest.plan) - 1
-
-    async def choose_action(*_args):
-        return Action(actor="hero", description="search the cave for clues")
-
-    async def resolve_intent(tool, world, **_kwargs):
-        if isinstance(tool, Action):
-            event = _event("hero found a clue about the lost amulet.")
-            world.history.append(event)
-            return event.text
-        raise AssertionError("the blocked completion must not reach the resolver")
-
-    async def report_clue(*_args):
-        return DMResult(
-            creates=[],
-            modifies=[
-                Modify(action="update_quest", target_id=quest_id, status="completed")
-            ],
-            minutes=[1],
-        )
-
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
-    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_intent)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_clue)
-
-    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
-
-    assert quest.status == "active"
-    assert quest.current_step == len(quest.plan) - 1
-    assert state.characters["hero"].stats.xp == 0
-
-
-def test_tick_rejects_intermediate_progress_from_unrelated_action(monkeypatch):
-    state = _state()
-    quest = state.quests["q1"]
-    quest.plan = ["question the tavern patrons about the cave", "clear the cave"]
-
-    async def choose_action(*_args):
-        return Action(actor="hero", description="search the cellar for supplies")
-
-    async def resolve_intent(tool, world, **_kwargs):
-        if isinstance(tool, Action):
-            event = _event("hero finds a coil of rope in the cellar.")
-            world.history.append(event)
-            return event.text
-        raise AssertionError("the blocked quest update must not reach the resolver")
-
-    async def report_progress(*_args):
-        return DMResult(
-            creates=[],
-            modifies=[Modify(action="update_quest", target_id="q1", advance=True)],
-            minutes=[5],
-        )
-
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
-    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_intent)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
-
-    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
-
-    assert quest.current_step == 0
-    assert quest.steps == []
-    assert state.characters["hero"].stats.xp == 0
-
-
-def test_tick_rejects_dialogue_progress_from_inspecting_a_roster(monkeypatch):
-    state = _state()
-    quest = state.quests["q1"]
-    quest.plan = ["question the servants about the circlet", "recover the circlet"]
-
-    async def inspect_roster(*_args):
-        return Action(
-            actor="hero",
-            description="inspect the servants' roster to see who might know about the circlet",
-        )
-
-    async def resolve_roster(tool, world, **_kwargs):
-        if isinstance(tool, Action):
-            event = _event(
-                "hero learns: The servants are Kae, Marta, Thorne, and Colm."
-            )
-            world.history.append(event)
-            return event.text
-        raise AssertionError("the blocked quest update must not reach the resolver")
-
-    async def report_progress(*_args):
-        return DMResult(
-            creates=[],
-            modifies=[
-                Modify(
-                    action="update_quest",
-                    target_id="q1",
-                    advance=True,
-                    step="identified the servants in the manor",
-                )
-            ],
-            minutes=[3],
-        )
-
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", inspect_roster)
-    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_roster)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
-
-    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
-
-    assert quest.current_step == 0
-    assert quest.steps == []
-    assert state.characters["hero"].stats.xp == 0
-
-
-def test_tick_rejects_location_bound_progress_from_a_different_location(monkeypatch):
-    state = _state()
-    state.locations.update(
-        {
-            "guild-hall": Location(id="guild-hall"),
-            "trade-dock": Location(id="trade-dock"),
-        }
-    )
-    state.characters["hero"].location = "trade-dock"
-    quest = state.quests["q1"]
-    quest.plan = [
-        "check the guild-hall ledger for anything unusual",
-        "find the missing guard",
-    ]
-
-    async def inspect_trade_dock_ledger(*_args):
-        return Action(
-            actor="hero", description="inspect the cargo ledger for unusual shipments"
-        )
-
-    async def resolve_search(tool, world, **_kwargs):
-        if isinstance(tool, Action):
-            event = HistoryEvent(
-                text="hero learns: The cargo ledger lists an unusual private shipment.",
-                location="trade-dock",
-                characters=["hero"],
-            )
-            world.history.append(event)
-            return event.text
-        raise AssertionError("the blocked quest update must not reach the resolver")
-
-    async def report_progress(*_args):
-        return DMResult(
-            creates=[],
-            modifies=[
-                Modify(
-                    action="update_quest",
-                    target_id="q1",
-                    advance=True,
-                    step="found an unusual private shipment in the cargo ledger",
-                )
-            ],
-            minutes=[10],
-        )
-
-    monkeypatch.setattr(
-        "src.engine.runtime.loop.flow_agent_turn", inspect_trade_dock_ledger
-    )
-    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_search)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
-
-    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
-
-    assert quest.current_step == 0
-    assert quest.steps == []
-    assert state.characters["hero"].stats.xp == 0
-
-
-@pytest.mark.parametrize(
-    "negative_finding",
-    [
-        "contains no direct reference to the Oak Circlet or its location",
-        "contains family lineage records but no direct information about the Oak Circlet's hiding place or history",
-    ],
-)
-def test_tick_rejects_search_progress_from_negative_clue_result(
-    monkeypatch, negative_finding
-):
-    state = _state()
-    quest = state.quests["q1"]
-    quest.title = "The Oak Circlet"
-    quest.description = "Recover the Thorne family's Oak Circlet before dawn."
-    quest.plan = [
-        "search the tavern for clues about the circlet's whereabouts",
-        "recover the Oak Circlet before dawn",
-    ]
-
-    async def examine_genealogy(*_args):
-        return Action(
-            actor="hero",
-            description="examine the leather-bound genealogy for the Oak Circlet's location",
-        )
-
-    async def resolve_search(tool, world, **_kwargs):
-        if isinstance(tool, Action):
-            event = _event(
-                f"hero learns: The leather-bound genealogy {negative_finding}."
-            )
-            world.history.append(event)
-            return event.text
-        raise AssertionError("the rejected quest update must not reach the resolver")
-
-    async def report_progress(*_args):
-        return DMResult(
-            creates=[],
-            modifies=[
-                Modify(
-                    action="update_quest",
-                    target_id="q1",
-                    advance=True,
-                    step=f"genealogy {negative_finding}",
-                )
-            ],
-            minutes=[15],
-        )
-
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", examine_genealogy)
-    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_search)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_progress)
-
-    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
-
-    assert quest.current_step == 0
-    assert quest.steps == []
-    assert state.characters["hero"].stats.xp == 0
 
 
 def test_tick_binds_tool_to_scheduled_actor(monkeypatch):
@@ -1827,647 +1098,411 @@ def test_tick_rejects_faction_acceleration_for_unobserved_evidence_discovery(
     ]
 
 
-def test_compound_final_objective_accepts_either_resolution_branch():
-    quest = _state().quests["q1"]
-    quest.plan[-1] = "gather proof and confront or report the smugglers"
-    quest.current_step = len(quest.plan) - 1
+# ============ QUEST PROGRESS ============
 
-    for event_text in (
-        "hero gathered proof and confronted the smugglers.",
-        "hero confronted the smugglers with proof.",
-        "hero reported the smugglers with proof.",
-    ):
-        assert _can_advance_final_objective(
-            quest,
-            Action(actor="hero", description="gather proof and resolve the smugglers"),
-            [_event(event_text)],
+
+def _quest_world() -> WorldState:
+    state = WorldState(
+        time=10,
+        last_quest_advance_time=10,
+        locations={
+            "harbor": Location(id="harbor", connections=["ruins"]),
+            "ruins": Location(id="ruins", connections=["harbor"]),
+        },
+        characters={
+            "hero": Character(id="hero", location="ruins"),
+            "elara": Character(id="elara", location="ruins"),
+            "varek": Character(id="varek", location="ruins"),
+        },
+        quests={
+            "q1": Quest(
+                id="q1",
+                title="Debt",
+                description="",
+                owner="hero",
+                plan=["interrogate Elara at the ruins", "settle the debt"],
+            )
+        },
+    )
+    return state
+
+
+def _veto(state, tool, events=None, advanced=()):
+    events = events if events is not None else [_event("something happened")]
+    return _quest_veto(state, state.quests["q1"], tool, events, set(advanced))
+
+
+def test_quest_progress_needs_a_real_attempt_by_the_owner():
+    state = _quest_world()
+    asked = [
+        HistoryEvent(
+            text='hero says to elara: "?"',
+            location="ruins",
+            characters=["hero", "elara"],
         )
-    assert not _can_advance_final_objective(
-        quest,
-        Action(actor="hero", description="gather proof"),
-        [_event("hero gathered proof about the smugglers.")],
+    ]
+    assert _veto(state, Speak(actor="hero", target="elara", message="?"), asked) is None
+    assert _veto(state, Travel(actor="hero", destination="harbor")) == "not_an_attempt"
+    assert _veto(state, Wait(actor="hero")) == "not_an_attempt"
+    assert _veto(state, Action(actor="varek", description="search")) == "not_owner"
+
+
+def test_quest_progress_accepts_a_reply_only_from_someone_the_objective_names():
+    state = _quest_world()
+    reply = [
+        HistoryEvent(
+            text='elara says to hero: "!"',
+            location="ruins",
+            characters=["elara", "hero"],
+        )
+    ]
+    assert _veto(state, Speak(actor="elara", target="hero", message="!"), reply) is None
+    other = [
+        HistoryEvent(
+            text='varek says to hero: "!"',
+            location="ruins",
+            characters=["varek", "hero"],
+        )
+    ]
+    assert (
+        _veto(state, Speak(actor="varek", target="hero", message="!"), other)
+        == "not_owner"
     )
 
 
-def test_compound_final_objective_accepts_grounded_direct_confrontation():
-    quest = _state().quests["q1"]
-    quest.plan[-1] = "gather proof and confront or report the smugglers"
-    quest.current_step = len(quest.plan) - 1
-    tool = Speak(
-        actor="hero",
-        target="captain-vess-rann",
-        message="I have your ship's log and the cave ledgers.",
-    )
-    event = HistoryEvent(
-        text='hero says to captain-vess-rann: "I have your ship\'s log and the cave ledgers."',
-        location="tavern",
-        characters=["hero", "captain-vess-rann"],
-    )
-
-    assert _can_advance_final_objective(
-        quest,
-        tool,
-        [event],
-        "confronted Captain Vess Rann directly with proof from the ship's log and ledgers",
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        tool,
-        [event],
-        "confronted Captain Vess Rann about the weather",
-    )
-    unrelated_tool = tool.model_copy(update={"message": "Fine weather today."})
-    unrelated_event = event.model_copy(
-        update={
-            "text": 'hero says to captain-vess-rann: "Fine weather today."',
-        }
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        unrelated_tool,
-        [unrelated_event],
-        "confronted Captain Vess Rann directly with proof from the ship's log and ledgers",
-    )
+def test_quest_progress_needs_the_named_place_and_person():
+    state = _quest_world()
+    examine = Action(actor="hero", description="examine her ledger", target="elara")
+    assert _veto(state, examine) is None
+    # Seen live: "follow Glimmerfin's sigils" was vetoed with her at the hero's side.
+    assert _veto(state, Action(actor="hero", description="search")) is None
+    state.characters["elara"].location = "harbor"
+    assert _veto(state, examine) is None  # named in passing: she is not at the ruins
+    state.quests["q1"].plan[0] = "interrogate Elara"
+    assert _veto(state, examine) == "named_person_absent"
+    state.quests["q1"].plan[0] = "interrogate Elara at the ruins"
+    state.characters["hero"].location = "harbor"
+    assert _veto(state, examine) == "wrong_location"
 
 
-def test_compound_final_objective_matches_punctuated_target_initials():
-    quest = _state().quests["q1"]
-    quest.plan[-1] = "gather proof and confront or report the smugglers"
-    quest.current_step = len(quest.plan) - 1
-    tool = Speak(
-        actor="hero",
-        target="vm",
-        message="The ship's log proves you signed off on the stolen goods.",
-    )
-    event = HistoryEvent(
-        text='hero says to vm: "The ship\'s log proves you signed off on the stolen goods."',
-        location="tavern",
-        characters=["hero", "vm"],
-    )
-
-    assert _can_advance_final_objective(
-        quest,
-        tool,
-        [event],
-        "confronted V.M. with the ship's log—proof of stolen goods signed by her",
-    )
-    assert not _can_advance_final_objective(
-        quest,
-        tool,
-        [event],
-        "confronted V.A. with the ship's log—proof of stolen goods signed by her",
-    )
+def test_a_person_named_in_passing_elsewhere_is_not_required():
+    """Seen live: 'check the well for supplies Jory guards' while Jory was not there."""
+    state = _quest_world()
+    state.characters["elara"].location = "harbor"
+    assert _veto(state, Action(actor="hero", description="search")) is None
 
 
-def test_tick_completes_final_confrontation_with_punctuated_target_initials(
-    monkeypatch,
-):
-    state = _state()
-    state.characters["vm"] = Character(id="vm", location="tavern")
+def test_failed_attempts_do_not_advance_quests():
+    state = _quest_world()
+    state.quests["q1"].plan = ["pick the lock", "settle the debt"]
+    check = Check(actor="hero", ability="dexterity", description="pick the lock")
+    failed = [_event("hero fails: pick the lock [dexterity; 3+0=3 vs DC 10].")]
+    assert _veto(state, check, failed) == "failed_attempt"
+    assert _veto(state, check, [_event("Cannot resolve check — x.")]) == (
+        "failed_attempt"
+    )
+    assert _veto(state, check, [_event("hero succeeds: pick the lock.")]) is None
+
+
+def test_quest_progress_is_paced_to_one_step_every_few_ticks():
+    state = _quest_world()
     quest = state.quests["q1"]
-    quest.plan = ["gather proof and confront or report the smugglers"]
+    quest.current_step, quest.last_progress = 1, state.time - 1
+    act = Action(actor="hero", description="pay varek")
+    assert _veto(state, act) == "too_soon"
+    quest.last_progress = state.time - MIN_TICKS_BETWEEN_ADVANCES
+    assert _veto(state, act) is None
+    assert _veto(state, act, advanced={"q1"}) == "one_step_per_tick"
 
-    async def confront_smuggler(*_args):
-        return Speak(
-            actor="hero",
-            target="vm",
-            message="The ship's log proves you signed off on the stolen goods.",
+
+def test_tick_advances_one_step_per_quest_even_when_the_dm_claims_more(monkeypatch):
+    state = _quest_world()
+    state.quests["q1"].plan = ["search the ruins", "read the ledger", "pay varek"]
+
+    async def search(*_args):
+        return Action(actor="hero", description="search the ruins")
+
+    async def resolve_search(intent, world, **kwargs):
+        if isinstance(intent, Modify):
+            return WorldOperations(world).advance_quest(
+                intent.target_id, advance=intent.advance
+            )
+        world.history.append(
+            HistoryEvent(
+                text="hero finds a ledger.", location="ruins", characters=["hero"]
+            )
         )
+        return "hero finds a ledger."
 
-    async def report_confrontation(*_args):
-        return DMResult(
-            creates=[],
-            modifies=[
-                Modify(
-                    action="update_quest",
-                    target_id="q1",
-                    advance=True,
-                    step="confronted V.M. with the ship's log—proof of stolen goods signed by her",
-                )
-            ],
-            minutes=[2],
-        )
+    async def claim_twice(*_args):
+        claim = Modify(action="update_quest", target_id="Debt", advance=True)
+        return DMResult(creates=[], modifies=[claim, claim], minutes=[5])
 
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", confront_smuggler)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_confrontation)
+    monkeypatch.setattr("src.engine.runtime.loop._pick_next_actor", lambda *_: "hero")
+    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", search)
+    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_search)
+    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", claim_twice)
+    logger = Mock()
 
-    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
-
-    assert quest.status == "completed"
-    assert quest.current_step == len(quest.plan)
-    assert state.characters["hero"].stats.xp == 60
-
-
-def test_tick_completes_speech_final_objective_from_grounded_dm_step(monkeypatch):
-    state = _state()
-    state.characters["captain-vess-rann"] = Character(
-        id="captain-vess-rann", location="tavern"
-    )
-    quest = state.quests["q1"]
-    quest.plan = ["gather proof and confront or report the smugglers"]
-
-    async def choose_action(*_args):
-        return Speak(
-            actor="hero",
-            target="captain-vess-rann",
-            message="I have your ship's log and the cave ledgers.",
-        )
-
-    async def report_confrontation(*_args):
-        return DMResult(
-            creates=[],
-            modifies=[
-                Modify(
-                    action="update_quest",
-                    target_id="q1",
-                    advance=True,
-                    step="confronted Captain Vess Rann directly with proof from the ship's log and ledgers",
-                )
-            ],
-            minutes=[2],
-        )
-
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", report_confrontation)
-
-    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
-
-    assert quest.status == "completed"
-    assert quest.current_step == len(quest.plan)
-    assert state.characters["hero"].stats.xp == 60
-
-
-def test_grounded_discovery_advances_search_objective_when_dm_does_not():
-    state = _state()
-    state.quests["q1"].plan = ["search tavern for clues", "clear the cave"]
-    event = _event("hero learns: the bandits use the north tunnel.")
-    state.history.append(event)
-
-    results = _advance_grounded_objective(
-        state,
-        "hero",
-        Action(actor="hero", description="search the bar for signs"),
-        [event],
-        {"q1": 0},
-    )
+    asyncio.run(tick("hero", state, 0, logger))
 
     assert state.quests["q1"].current_step == 1
-    assert state.characters["hero"].stats.xp == 10
-    assert "Quest 'q1' updated" in results[0]
-
-
-def test_grounded_objective_fallback_requires_new_evidence_and_matching_location():
-    state = _state()
-    state.quests["q1"].plan = ["search forest for clues"]
-
-    assert (
-        _advance_grounded_objective(
-            state,
-            "hero",
-            Action(actor="hero", description="search the tavern"),
-            [_event("hero learns: the cellar is damp.")],
-            {"q1": 0},
-        )
-        == []
-    )
-    state.quests["q1"].plan = ["search tavern for clues"]
-    assert (
-        _advance_grounded_objective(
-            state,
-            "hero",
-            Action(actor="hero", description="search the tavern"),
-            [_event("hero searches but finds nothing useful.")],
-            {"q1": 0},
-        )
-        == []
-    )
-    assert state.quests["q1"].current_step == 0
-
-
-def test_grounded_objective_fallback_cannot_complete_from_final_clue_discovery():
-    state = _state()
-    state.quests["q1"].plan = ["find clues in tavern"]
-    event = _event("hero finds a clue in the tavern.")
-
-    assert (
-        _advance_grounded_objective(
-            state,
-            "hero",
-            Action(actor="hero", description="search the tavern"),
-            [event],
-            {"q1": 0},
-        )
-        == []
-    )
-    assert state.quests["q1"].current_step == 0
-    assert state.quests["q1"].status == "active"
-    assert state.characters["hero"].stats.xp == 0
-
-
-def test_direct_final_resolution_bypasses_intermediate_objectives_without_their_xp():
-    state = _state()
-    quest = state.quests["q1"]
-    quest.title = "The Oak Circlet"
-    quest.description = "Recover the Thorne family's Oak Circlet before dawn."
-    quest.plan = [
-        "search the upper-library for clues about the circlet's whereabouts",
-        "question the servants about the circlet",
-        "search the manor-foyer and family portraits for hidden clues",
-        "recover the Oak Circlet before dawn",
+    vetoes = [
+        c
+        for c in logger.log_event.call_args_list
+        if c.args[0] == "quest_advance_vetoed"
     ]
-    event = _event("hero picks up the Oak Circlet.")
-
-    results = _complete_resolved_final_objective(
-        state,
-        "hero",
-        Action(actor="hero", description="take the Oak Circlet"),
-        [event],
-    )
-
-    assert quest.status == "completed"
-    assert quest.current_step == len(quest.plan)
-    assert quest.steps == [
-        f"{objective} — bypassed by direct resolution" for objective in quest.plan[:-1]
-    ] + ["recover the Oak Circlet before dawn — resolved directly"]
-    assert state.characters["hero"].stats.xp == 60
-    assert "+60 XP to hero" in results[0]
-    WorldState.model_validate(state.model_dump())
+    assert [c.kwargs["guard"] for c in vetoes] == ["one_step_per_tick"]
 
 
-def test_tick_completes_final_objective_when_dm_omits_quest_update(monkeypatch):
-    state = _state()
-    quest = state.quests["q1"]
-    quest.plan = ["search the manor", "recover the Oak Circlet before dawn"]
+def test_tick_charges_travel_time_per_leg_of_the_route(monkeypatch):
+    state = _quest_world()
+    state.locations["dock"] = Location(id="dock", connections=["harbor"])
+    state.locations["harbor"].connections.append("dock")
+    state.characters["hero"].location = "dock"
 
-    async def choose_action(*_args):
-        return Action(actor="hero", description="take the Oak Circlet")
+    async def go_far(*_args):
+        return Travel(actor="hero", destination="ruins")
 
-    async def resolve_intent(tool, world, **_kwargs):
-        if isinstance(tool, Action):
-            event = _event("hero picks up the Oak Circlet.")
-            world.history.append(event)
-            return event.text
-        raise AssertionError("no DM updates should need resolution")
-
-    async def omit_progress(*_args):
+    async def no_review(*_args):
         return DMResult(creates=[], modifies=[], minutes=[1])
 
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", choose_action)
-    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_intent)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", omit_progress)
+    monkeypatch.setattr("src.engine.runtime.loop._pick_next_actor", lambda *_: "hero")
+    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", go_far)
+    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", no_review)
 
-    asyncio.run(tick("hero", state, 0, logger=Mock(spec=Logger)))
+    asyncio.run(tick("hero", state, 0, Mock()))
 
-    assert quest.status == "completed"
-    assert quest.current_step == len(quest.plan)
-    assert state.characters["hero"].stats.xp == 60
-
-
-# ============ CAMPAIGN OUTCOME ============
+    assert state.characters["hero"].location == "ruins"
+    assert state.history[-1].text == "hero travelled via harbor to 'ruins'."
+    assert state.minutes_elapsed == 20
 
 
-def test_campaign_ends_in_victory_when_all_owned_quests_are_completed():
-    state = _state()
-    state.quests["q1"].status = "completed"
-    state.quests["side"] = Quest(
-        id="side",
-        title="Return the Key",
-        description="",
-        owner="hero",
-        status="Completed",
-    )
-
-    assert _campaign_outcome(state, "hero") == "completed"
+# ============ ENDLESS RUN ============
 
 
-def test_campaign_ends_in_defeat_when_resolved_owned_quest_failed():
-    state = _state()
-    state.quests["q1"].status = "failed"
+class _Run:
+    """Fake persistence and logging around _run_game; records what the loop did."""
 
-    assert _campaign_outcome(state, "hero") == "failed"
+    def __init__(self, monkeypatch, state: WorldState, *, latest: str | None = None):
+        self.events: list[tuple[str, dict]] = []
+        self.saves: list[int] = []
+        self.closed: list[dict] = []
+        self.turns: list[int] = []
+        run = self
 
+        class Manager:
+            run_id = "test-run"
+            scenario = "demo"
+            state_dir = None  # compaction is stubbed out
+            manifest = {"pc": "hero", "title": "Test Quest", "hook": "Go."}
 
-def test_campaign_continues_with_active_owned_quest_or_no_owned_quests():
-    state = _state()
-    assert _campaign_outcome(state, "hero") is None
+            def __init__(self, **_kwargs):
+                pass
 
-    state.quests["q1"].owner = "someone-else"
-    assert _campaign_outcome(state, "hero") is None
+            def init_state(self):
+                return state
+
+            def latest_snapshot_name(self):
+                return latest
+
+            def load_state(self, snapshot):
+                assert snapshot == latest
+                return state
+
+            def save_state(self, world):
+                run.saves.append(world.time)
+
+        class Log:
+            def __init__(self, **_kwargs):
+                pass
+
+            def log_event(self, event, **kwargs):
+                run.events.append((event, kwargs))
+
+            def log_turn(self, turn):
+                run.turns.append(turn)
+
+            def close(self, **kwargs):
+                run.closed.append(kwargs)
+
+        async def skip(*_args):
+            pass
+
+        monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
+        monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
+        monkeypatch.setattr("src.engine.runtime.loop.compact_history", skip)
+        monkeypatch.setattr("src.engine.runtime.loop.campaign_upkeep", skip)
+        monkeypatch.setattr("src.engine.runtime.loop.FAILED_TICK_BACKOFF_S", 0)
+
+    def names(self) -> list[str]:
+        return [event for event, _ in self.events]
 
 
 def test_resumed_game_logs_next_world_turn_instead_of_restarting_at_one(monkeypatch):
     state = _state()
     state.time = 7
-    logged_turns: list[int] = []
     tick_indexes: list[int] = []
-    closed: list[dict] = []
+    run = _Run(monkeypatch, state, latest="world_state_7.json")
 
-    class Manager:
-        run_id = "resumed-run"
-        scenario = "demo"
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Continue it."}
-
-        def __init__(self, **_kwargs):
-            pass
-
-        def latest_snapshot_name(self):
-            return "world_state_7.json"
-
-        def load_state(self, snapshot):
-            assert snapshot == "world_state_7.json"
-            return state
-
-        def save_state(self, _state):
-            pass
-
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, _event, **_kwargs):
-            pass
-
-        def log_turn(self, turn):
-            logged_turns.append(turn)
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def complete_turn(_pc_id, _world, tick_index, _logger, _controller, _replay):
+    async def complete_turn(_pc_id, _world, tick_index, *_args):
         tick_indexes.append(tick_index)
         return True
 
-    async def skip_compaction(*_args):
-        pass
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.tick", complete_turn)
-    monkeypatch.setattr("src.engine.runtime.loop.compact_history", skip_compaction)
-
     asyncio.run(_run_game("demo", "hero", max_turns=1, new_character=None, resume=True))
 
-    assert logged_turns == [8]
+    assert run.turns == [8]
     assert tick_indexes == [7]
-    assert closed == [{"turns_completed": 8}]
+    assert run.closed == [{"turns_completed": 8}]
 
 
-def test_game_loop_stops_immediately_after_campaign_victory(monkeypatch):
+def test_resume_continues_with_the_persisted_protagonist(monkeypatch):
+    state = _state()
+    state.characters["heir"] = Character(id="heir", location="tavern")
+    state.protagonist = "heir"
+    actors: list[str] = []
+    _Run(monkeypatch, state, latest="world_state_0.json")
+
+    async def complete_turn(pc_id, *_args):
+        actors.append(pc_id)
+        return True
+
+    monkeypatch.setattr("src.engine.runtime.loop.tick", complete_turn)
+    asyncio.run(_run_game("demo", None, max_turns=1, new_character=None, resume=True))
+
+    assert actors == ["heir"]
+
+
+def test_campaign_continues_after_every_quest_is_resolved(monkeypatch):
     state = _state()
     ticks: list[int] = []
-    logged_events: list[str] = []
+    run = _Run(monkeypatch, state)
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
-
-        def __init__(self, **_kwargs):
-            pass
-
-        def init_state(self):
-            return state
-
-        def latest_snapshot_name(self):
-            return None
-
-        def save_state(self, _state):
-            pass
-
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **_kwargs):
-            logged_events.append(event)
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **_kwargs):
-            pass
-
-    async def finish_quest(_pc_id, world, tick_index, _logger, _controller, _replay):
+    async def finish_quest(_pc_id, world, tick_index, *_args):
         ticks.append(tick_index)
-        world.quests["q1"].status = "completed"
+        world.quests["q1"].status = "failed"
+        return True
 
-    async def skip_compaction(*_args):
-        pass
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.tick", finish_quest)
-    monkeypatch.setattr("src.engine.runtime.loop.compact_history", skip_compaction)
+    assert asyncio.run(_run_game("demo", "hero", max_turns=3, new_character=None))
 
-    succeeded = asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
-
-    assert succeeded is True
-    assert ticks == [0]
-    assert "campaign_completed" in logged_events
+    assert ticks == [0, 1, 2]
+    assert run.saves == [0, 1, 2, 3]
 
 
-def test_game_loop_records_pc_death_on_final_turn(monkeypatch):
+def test_zero_turns_runs_until_stopped(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    closed: list[dict] = []
+    run = _Run(monkeypatch, state)
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Survive it."}
+    async def complete_turn(*_args):
+        return True
 
-        def __init__(self, **_kwargs):
-            pass
+    monkeypatch.setattr("src.engine.runtime.loop.tick", complete_turn)
+    asyncio.run(
+        _run_game(
+            "demo",
+            "hero",
+            max_turns=0,
+            new_character=None,
+            stop_check=lambda: state.time >= 40,
+        )
+    )
 
-        def init_state(self):
-            return state
+    assert run.saves[-1] == 40
+    assert ("run_stopped", {}) in run.events
 
-        def latest_snapshot_name(self):
-            return None
 
-        def save_state(self, _state):
-            pass
+def test_pc_death_hands_the_story_to_a_successor(monkeypatch):
+    state = _state()
+    state.characters["hero"].relationships["squire"] = "loyal squire"
+    state.characters["squire"] = Character(id="squire", location="tavern")
+    run = _Run(monkeypatch, state)
 
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def lethal_turn(_pc_id, world, _tick_index, _logger, _controller, _replay):
+    async def lethal_turn(_pc_id, world, *_args):
         world.characters["hero"].stats.hp = 0
         return True
 
-    async def skip_compaction(*_args):
-        pass
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.tick", lethal_turn)
-    monkeypatch.setattr("src.engine.runtime.loop.compact_history", skip_compaction)
-
     asyncio.run(_run_game("demo", "hero", max_turns=1, new_character=None))
 
-    assert ("pc_death", {"pc": "hero"}) in logged_events
-    assert closed == [{"turns_completed": 1}]
+    assert ("pc_death", {"pc": "hero"}) in run.events
+    assert ("successor", {"pc": "squire", "previous": "hero"}) in run.events
+    assert state.protagonist == "squire"
+    assert state.quests["q1"].owner == "squire"
+    assert run.closed == [{"turns_completed": 1}]
 
 
-def test_game_loop_records_provider_failure_without_persisting_partial_turn(
-    monkeypatch,
-):
+def test_failed_tick_is_rolled_back_and_retried_with_the_next_actor(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    saves: list[int] = []
-    closed: list[dict] = []
+    tick_indexes: list[int] = []
+    run = _Run(monkeypatch, state)
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
+    async def flaky_turn(_pc_id, world, tick_index, *_args):
+        tick_indexes.append(tick_index)
+        world.characters["hero"].stats.gold += 100  # partial work of the tick
+        if len(tick_indexes) == 1:
+            raise UnexpectedModelBehavior("Exceeded maximum retries (1)")
+        return True
 
-        def __init__(self, **_kwargs):
-            pass
+    monkeypatch.setattr("src.engine.runtime.loop.tick", flaky_turn)
+    assert asyncio.run(_run_game("demo", "hero", max_turns=1, new_character=None))
 
-        def init_state(self):
-            return state
+    assert tick_indexes == [0, 1]
+    assert state.characters["hero"].stats.gold == 100  # first attempt rolled back
+    assert run.saves == [0, 1]
+    assert (
+        "tick_failed",
+        {
+            "error": "UnexpectedModelBehavior",
+            "message": "Exceeded maximum retries (1)",
+            "consecutive": 1,
+        },
+    ) in run.events
+    assert "run_error" not in run.names()
 
-        def latest_snapshot_name(self):
-            return None
 
-        def save_state(self, world):
-            saves.append(world.time)
+@pytest.mark.parametrize(
+    "error",
+    [
+        ModelAPIError("ollama", "Connection error"),
+        UnexpectedModelBehavior("Tool exceeded max retries count of 3"),
+    ],
+)
+def test_game_gives_up_only_after_consecutive_failed_ticks(monkeypatch, error):
+    state = _state()
+    run = _Run(monkeypatch, state)
 
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
+    async def failing_turn(*_args):
+        raise error
 
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def fail_provider(*_args):
-        raise ModelAPIError("anthropic", "Connection error")
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
-    monkeypatch.setattr("src.engine.runtime.loop.tick", fail_provider)
-
-    succeeded = asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
+    monkeypatch.setattr("src.engine.runtime.loop.tick", failing_turn)
+    succeeded = asyncio.run(_run_game("demo", "hero", max_turns=50, new_character=None))
 
     assert succeeded is False
-    assert [event for event, _ in logged_events].count("run_error") == 1
-    assert dict(logged_events)["run_error"] == {
-        "error": "ModelAPIError",
-        "message": "Connection error",
-    }
-    assert saves == [0]
-    assert closed == [{"turns_completed": 0}]
+    assert run.names().count("tick_failed") == MAX_FAILED_TICKS
+    assert run.names().count("run_error") == 1
+    assert run.saves == [0]
+    assert run.closed == [{"turns_completed": 0}]
 
 
-def test_game_loop_records_retry_exhaustion_without_persisting_partial_turn(
-    monkeypatch,
-):
+def test_turn_without_character_action_is_a_failed_tick(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    saves: list[int] = []
-    closed: list[dict] = []
+    run = _Run(monkeypatch, state)
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
+    async def no_character_action(*_args):
+        return None
 
-        def __init__(self, **_kwargs):
-            pass
+    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", no_character_action)
+    asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
 
-        def init_state(self):
-            return state
-
-        def latest_snapshot_name(self):
-            return None
-
-        def save_state(self, world):
-            saves.append(world.time)
-
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def exhaust_retries(*_args):
-        raise UnexpectedModelBehavior("Tool exceeded max retries count of 3")
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
-    monkeypatch.setattr("src.engine.runtime.loop.tick", exhaust_retries)
-
-    succeeded = asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
-
-    assert succeeded is False
-    assert [event for event, _ in logged_events].count("run_error") == 1
-    assert dict(logged_events)["run_error"] == {
-        "error": "UnexpectedModelBehavior",
-        "message": "Tool exceeded max retries count of 3",
-    }
-    assert saves == [0]
-    assert closed == [{"turns_completed": 0}]
+    assert run.names().count("tick_failed") == MAX_FAILED_TICKS
+    assert run.saves == [0]
 
 
 def test_game_loop_logs_and_reraises_unexpected_post_turn_failure(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    saves: list[int] = []
-    closed: list[dict] = []
-
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
-
-        def __init__(self, **_kwargs):
-            pass
-
-        def init_state(self):
-            return state
-
-        def latest_snapshot_name(self):
-            return None
-
-        def save_state(self, world):
-            saves.append(world.time)
-
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
+    run = _Run(monkeypatch, state)
 
     async def complete_turn(*_args):
         return True
@@ -2475,77 +1510,61 @@ def test_game_loop_logs_and_reraises_unexpected_post_turn_failure(monkeypatch):
     async def fail_compaction(*_args):
         raise RuntimeError("chronicle storage unavailable")
 
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
     monkeypatch.setattr("src.engine.runtime.loop.tick", complete_turn)
     monkeypatch.setattr("src.engine.runtime.loop.compact_history", fail_compaction)
 
     with pytest.raises(RuntimeError, match="chronicle storage unavailable"):
         asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
 
-    assert [event for event, _ in logged_events].count("run_error") == 1
-    assert dict(logged_events)["run_error"] == {
+    assert run.names().count("run_error") == 1
+    assert dict(run.events)["run_error"] == {
         "error": "RuntimeError",
         "message": "chronicle storage unavailable",
     }
-    assert saves == [0]
-    assert closed == [{"turns_completed": 0}]
+    assert run.saves == [0]
+    assert run.closed == [{"turns_completed": 0}]
 
 
-def test_game_loop_does_not_persist_turn_without_character_action(monkeypatch):
+def test_dm_quest_claim_vetoed_by_a_guard_is_logged(monkeypatch):
     state = _state()
-    logged_events: list[tuple[str, dict]] = []
-    saves: list[int] = []
-    closed: list[dict] = []
+    logger = Mock()
 
-    class Manager:
-        run_id = "test-run"
-        scenario = "demo"
-        manifest = {"pc": "hero", "title": "Test Quest", "hook": "Finish it."}
+    async def resolve_wait(_intent, world, **_kwargs):
+        world.history.append(_event("hero waits."))
+        return "hero waits."
 
-        def __init__(self, **_kwargs):
-            pass
+    async def claim_progress(*_args):
+        return DMResult(
+            creates=[],
+            modifies=[
+                Modify(
+                    action="update_quest", target_id="q1", advance=True, step="scouted"
+                )
+            ],
+            minutes=[5],
+        )
 
-        def init_state(self):
-            return state
+    async def wait_turn(*_args):
+        return Wait(actor="hero")
 
-        def latest_snapshot_name(self):
-            return None
+    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", wait_turn)
+    monkeypatch.setattr("src.engine.runtime.loop.resolve", resolve_wait)
+    monkeypatch.setattr("src.engine.runtime.loop.flow_dm", claim_progress)
 
-        def save_state(self, world):
-            saves.append(world.time)
+    asyncio.run(tick("hero", state, 0, logger))
 
-    class Log:
-        def __init__(self, **_kwargs):
-            pass
-
-        def log_event(self, event, **kwargs):
-            logged_events.append((event, kwargs))
-
-        def log_turn(self, _turn):
-            pass
-
-        def close(self, **kwargs):
-            closed.append(kwargs)
-
-    async def no_character_action(*_args):
-        return None
-
-    async def unexpected_compaction(*_args):
-        raise AssertionError("an incomplete turn must not reach compaction")
-
-    monkeypatch.setattr("src.engine.runtime.loop.StateManager", Manager)
-    monkeypatch.setattr("src.engine.runtime.loop.Logger", Log)
-    monkeypatch.setattr("src.engine.runtime.loop.flow_agent_turn", no_character_action)
-    monkeypatch.setattr(
-        "src.engine.runtime.loop.compact_history", unexpected_compaction
+    assert state.quests["q1"].current_step == 0
+    logger.log_event.assert_any_call(
+        "quest_advance_vetoed",
+        guard="not_an_attempt",
+        quest="q1",
+        objective="scout",
+        claim="scouted",
+        status=None,
+        actor="hero",
+        tool="wait",
+        events=["hero waits."],
     )
-
-    asyncio.run(_run_game("demo", "hero", max_turns=5, new_character=None))
-
-    assert ("run_stopped", {"reason": "no_character_action"}) in logged_events
-    assert saves == [0]
-    assert closed == [{"turns_completed": 0}]
 
 
 # ============ ESCALATION COUNTER ============
