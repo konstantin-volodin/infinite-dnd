@@ -1168,6 +1168,13 @@ def test_quest_progress_needs_the_named_place_and_person():
     assert _veto(state, examine) == "wrong_location"
 
 
+def test_a_person_named_in_passing_elsewhere_is_not_required():
+    """Seen live: 'check the well for supplies Jory guards' while Jory was not there."""
+    state = _quest_world()
+    state.characters["elara"].location = "harbor"
+    assert _veto(state, Action(actor="hero", description="search")) is None
+
+
 def test_failed_attempts_do_not_advance_quests():
     state = _quest_world()
     state.quests["q1"].plan = ["pick the lock", "settle the debt"]

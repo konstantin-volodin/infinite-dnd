@@ -435,11 +435,16 @@ def _quest_veto(
     places = named_ids(objective, state.locations)
     if places and owner.location not in places:
         return "wrong_location"
+    # Someone named only in passing ("supplies Jory guards") need not take
+    # part: only people actually at the objective's place are required.
+    expected = {
+        p for p in people if not places or state.characters[p].location in places
+    }
     target = getattr(tool, "target", None) or getattr(tool, "opponent", None)
     involved = {c for event in events for c in event.characters}
     if resolved := resolve_character(state, target):
         involved.add(resolved.id)
-    if people and not people & involved:
+    if expected and not expected & involved:
         return "named_person_absent"
     if quest.id in advanced:
         return "one_step_per_tick"
