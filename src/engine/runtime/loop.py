@@ -169,16 +169,16 @@ def _pick_next_actor(state: WorldState, active_pc_id: str, tick: int) -> str:
         if character_id != active_pc_id
         and _awaiting_response(state, character_id, speaker=active_pc_id)
     ]
-    if pending_responders:
-        # The hero's direct question gets a reply before round-robin rotation
-        # gives the hero another turn. NPCs addressing each other do not jump
-        # the queue, or their exchange starves the hero of turns.
-        return pending_responders[0]
     # It is the hero's story: they act every other tick however crowded the
-    # scene is, and the others share the turns in between.
+    # scene is. The ticks in between go to whoever the hero just addressed, so a
+    # question gets its answer, and otherwise to the others in turn. An NPC who
+    # owes a reply never takes the hero's own tick: seen live, one who answered
+    # with actions instead of speech kept the floor for seven ticks.
     others = actors[1:]
     if tick % 2 == 0 or not others:
         return active_pc_id
+    if pending_responders:
+        return pending_responders[0]
     return others[tick // 2 % len(others)]
 
 

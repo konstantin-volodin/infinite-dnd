@@ -523,12 +523,14 @@ def test_scene_scheduler_prioritizes_a_directly_addressed_npc_reply():
     state.characters["calla"] = Character(id="calla", location="tavern")
     WorldOperations(state).speak("hero", "What did you find?", "calla")
 
-    # Tick 8 would otherwise rotate back to the PC: 8 % 2 == 0.
-    assert _pick_next_actor(state, "hero", 8) == "calla"
+    state.characters["keph"] = Character(id="keph", location="tavern", goal="fish")
+    # Tick 11 would otherwise rotate to keph; the hero keeps every even tick.
+    assert _pick_next_actor(state, "hero", 11) == "calla"
+    assert _pick_next_actor(state, "hero", 10) == "hero"
 
     WorldOperations(state).speak("calla", "The lock hides a passage.", "hero")
 
-    assert _pick_next_actor(state, "hero", 9) == "hero"
+    assert _pick_next_actor(state, "hero", 11) == "keph"
 
 
 def test_npcs_addressing_each_other_do_not_starve_the_hero_of_turns():
