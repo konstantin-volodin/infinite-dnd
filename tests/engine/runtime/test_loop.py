@@ -1172,9 +1172,13 @@ def test_quest_progress_needs_the_named_place_and_person():
     state = _quest_world()
     examine = Action(actor="hero", description="examine her ledger", target="elara")
     assert _veto(state, examine) is None
-    assert _veto(state, Action(actor="hero", description="search")) == (
-        "named_person_absent"
-    )
+    # Seen live: "follow Glimmerfin's sigils" was vetoed with her at the hero's side.
+    assert _veto(state, Action(actor="hero", description="search")) is None
+    state.characters["elara"].location = "harbor"
+    assert _veto(state, examine) is None  # named in passing: she is not at the ruins
+    state.quests["q1"].plan[0] = "interrogate Elara"
+    assert _veto(state, examine) == "named_person_absent"
+    state.quests["q1"].plan[0] = "interrogate Elara at the ruins"
     state.characters["hero"].location = "harbor"
     assert _veto(state, examine) == "wrong_location"
 

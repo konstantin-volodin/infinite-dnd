@@ -1,7 +1,7 @@
 """Campaign upkeep between ticks: the story never ends, it changes hands and moves on.
 
 - a dead hero hands the story to a successor (deterministic)
-- a quest stuck past a bound is abandoned as failed (deterministic)
+- a quest stuck past a bound skips the stuck objective, or fails on its last one (deterministic)
 - a hero with no active quest gets a new arc from the storyteller (one LLM call)
 """
 
@@ -19,9 +19,9 @@ from src.interface.session_log import Logger
 from .replay import ReplayTape
 
 # Ticks an active quest may go without its objective advancing before it is
-# abandoned. The director fires every few quiet ticks (see loop._is_stalled), so
+# given up on. The director fires every few quiet ticks (see loop._is_stalled), so
 # a quest reaching this bound has already had several interventions.
-FORCE_PROGRESS_TICKS = 24
+FORCE_PROGRESS_TICKS = 16
 
 _ARC_USAGE = UsageLimits(request_limit=6)
 
@@ -90,32 +90,46 @@ def hand_over(state: WorldState) -> tuple[str, str] | None:
     return hero.id, heir.id
 
 
-def abandon_stalled_quests(state: WorldState) -> list[str]:
-    """Fail every active quest whose objective has not moved for FORCE_PROGRESS_TICKS."""
-    abandoned: list[str] = []
+def move_stalled_quests_on(state: WorldState) -> list[tuple[str, str]]:
+    """Keep a stuck quest moving, as a DM would: after FORCE_PROGRESS_TICKS without
+    progress the hero gives up on the objective and presses on to the next one; a
+    stuck final objective loses the quest. Returns (quest id, "skipped" | "abandoned").
+    """
+    moved: list[tuple[str, str]] = []
     for quest in [q for q in state.quests.values() if q.status == "active"]:
         if state.time - quest.last_progress < FORCE_PROGRESS_TICKS:
             continue
-        objective = (
-            quest.plan[quest.current_step]
-            if quest.current_step < len(quest.plan)
-            else quest.title
-        )
+        owner = state.characters.get(quest.owner)
+        place = owner.location if owner else ""
+        who = quest.owner or "No one"
         ops = WorldOperations(state)
+        if quest.current_step < len(quest.plan) - 1:
+            objective = quest.plan[quest.current_step]
+            quest.steps.append(f"gave up trying to {objective}")
+            quest.current_step += 1
+            quest.last_progress = state.time
+            ops.world_event(
+                f"Time is running out. {who} gives up trying to {objective} and "
+                f"presses on to {quest.plan[quest.current_step]}, less prepared "
+                "than they hoped.",
+                place,
+            )
+            moved.append((quest.id, "skipped"))
+            continue
+        objective = quest.plan[-1] if quest.plan else quest.title
         ops.advance_quest(
             quest.id,
             new_status="failed",
             step=f"abandoned, never managed to {objective}",
         )
-        owner = state.characters.get(quest.owner)
         ops.world_event(
             f"The trail goes cold: '{quest.title}' is lost. "
-            f"{quest.owner or 'No one'} never managed to {objective}, "
+            f"{who} never managed to {objective}, "
             "and whoever stood to gain from that failure now moves freely.",
-            owner.location if owner else "",
+            place,
         )
-        abandoned.append(quest.id)
-    return abandoned
+        moved.append((quest.id, "abandoned"))
+    return moved
 
 
 async def open_arc(
@@ -166,13 +180,13 @@ async def campaign_upkeep(
 ) -> None:
     """Run between ticks: successor on death, forced closure, then a new arc if needed."""
     succeed_if_dead(state, logger)
-    for quest_id in abandon_stalled_quests(state):
+    for quest_id, outcome in move_stalled_quests_on(state):
         print(
-            f"  [quest] {quest_id}: abandoned after {FORCE_PROGRESS_TICKS} stalled ticks"
+            f"  [quest] {quest_id}: objective {outcome} after {FORCE_PROGRESS_TICKS} stalled ticks"
         )
         print(f"  {state.history[-1].text}")
         logger.log_event(
-            "quest_abandoned", quest=quest_id, stalled_ticks=FORCE_PROGRESS_TICKS
+            f"quest_{outcome}", quest=quest_id, stalled_ticks=FORCE_PROGRESS_TICKS
         )
     if _active_quests(state, state.protagonist):
         return

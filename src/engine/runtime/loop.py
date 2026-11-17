@@ -440,16 +440,15 @@ def _quest_veto(
     places = named_ids(objective, state.locations)
     if places and owner.location not in places:
         return "wrong_location"
-    # Someone named only in passing ("supplies Jory guards") need not take
-    # part: only people actually at the objective's place are required.
+    # A person the objective names must be on hand, not necessarily acting:
+    # "follow Glimmerfin's sigils" is done beside her, not to her. Someone named
+    # only in passing ("supplies Jory guards") who is elsewhere is not required.
     expected = {
         p for p in people if not places or state.characters[p].location in places
     }
-    target = getattr(tool, "target", None) or getattr(tool, "opponent", None)
-    involved = {c for event in events for c in event.characters}
-    if resolved := resolve_character(state, target):
-        involved.add(resolved.id)
-    if expected and not expected & involved:
+    if expected and not any(
+        state.characters[p].location == owner.location for p in expected
+    ):
         return "named_person_absent"
     if quest.id in advanced:
         return "one_step_per_tick"

@@ -5,7 +5,7 @@ from src.agents.dm.storyteller import Arc, Person, Place
 from src.engine.runtime import campaign
 from src.engine.runtime.campaign import (
     FORCE_PROGRESS_TICKS,
-    abandon_stalled_quests,
+    move_stalled_quests_on,
     campaign_upkeep,
     hand_over,
     open_arc,
@@ -109,19 +109,27 @@ def test_dead_or_untied_characters_cannot_succeed_so_a_newcomer_arrives():
 # ============ FORCED PROGRESS ============
 
 
-def test_quest_is_abandoned_exactly_at_the_stall_bound():
+def test_stalled_objective_is_skipped_exactly_at_the_bound_and_the_last_one_fails():
     state = _state()
     state.time = FORCE_PROGRESS_TICKS - 1
-    assert abandon_stalled_quests(state) == []
+    assert move_stalled_quests_on(state) == []
 
     state.time = FORCE_PROGRESS_TICKS
-    assert abandon_stalled_quests(state) == ["q1"]
+    assert move_stalled_quests_on(state) == [("q1", "skipped")]
 
     quest = state.quests["q1"]
+    assert (quest.status, quest.current_step) == ("active", 1)
+    assert quest.steps[-1] == "gave up trying to scout the cave"
+    assert "presses on to clear the cave" in state.history[-1].text
+    assert move_stalled_quests_on(state) == []  # the next objective gets a full bound
+
+    state.time = 2 * FORCE_PROGRESS_TICKS
+    assert move_stalled_quests_on(state) == [("q1", "abandoned")]
     assert quest.status == "failed"
-    assert quest.steps[-1] == "abandoned, never managed to scout the cave"
+    assert quest.steps[-1] == "abandoned, never managed to clear the cave"
     assert "The trail goes cold: 'Clear the Cave' is lost." in state.history[-1].text
     assert state.history[-1].characters == ["hero", "barkeep"]
+    WorldState.model_validate(state.model_dump())
 
 
 def test_progress_resets_the_stall_bound():
@@ -129,7 +137,7 @@ def test_progress_resets_the_stall_bound():
     state.time = FORCE_PROGRESS_TICKS
     state.quests["q1"].last_progress = 5
 
-    assert abandon_stalled_quests(state) == []
+    assert move_stalled_quests_on(state) == []
 
 
 # ============ ARCS ============
