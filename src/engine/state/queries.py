@@ -98,7 +98,8 @@ def route(state: WorldState, start: str, goal: str) -> list[str] | None:
 
 def named_ids(text: str, ids) -> set[str]:
     """Known ids spelled out in free text, e.g. 'question Old Keph at harbor-dock'."""
-    padded = f"-{slugify(text)}-"
+    # Split possessives ("Varek's") so they cannot fuse into a different word.
+    padded = f"-{slugify(text.replace("'", ' ').replace('’', ' '))}-"
     return {id_ for id_ in ids if f"-{slugify(id_)}-" in padded}
 
 

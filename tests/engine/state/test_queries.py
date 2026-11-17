@@ -161,6 +161,10 @@ def test_named_ids_finds_ids_spelled_out_in_prose():
     text = "interrogate Elara-scribe at Iron Gate Ruins"
     assert named_ids(text, ids) == {"iron-gate-ruins", "elara-scribe"}
     assert named_ids("search the docks", ids) == set()
+    assert named_ids("guard Elara-Scribe’s ledger at the dock's end", ids) == {
+        "elara-scribe",
+        "dock",
+    }
 
 
 def test_live_factions_hide_finished_and_orphaned_agendas():
